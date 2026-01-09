@@ -2,6 +2,8 @@
 --!@brief Constants, components declarations, and functions
 --!@author Matteo D'Antonio, matteo.dantonio@studenti.unipg.it
 --!@author Mattia Barbanera, mattia.barbanera@infn.it
+--!@author Stefan Frentescu, stefan.frentescu@studenti.unipg.it
+
 
 library ieee;
 use ieee.std_logic_1164.all;
@@ -9,11 +11,11 @@ use ieee.numeric_std.all;
 use ieee.std_logic_unsigned.all;
 
 use work.basic_package.all;
-use work.FOOTpackage.all;
 
 --!@copydoc paperoPackage.vhd
 package paperoPackage is
   -- Constants -----------------------------------------------------------------
+  constant cFIFO_WIDTH     : natural := 16;  --!Data width of the FIFO
   constant cREG_WIDTH      : natural := 32;  --!Register width
   constant cHPS_REGISTERS  : natural := 16;  --!Number of HPS-RW, FPGA-R registers
   constant cFPGA_REGISTERS : natural := 16;  --!Number of HPS-R, FPGA-RW registers
@@ -50,15 +52,17 @@ package paperoPackage is
   constant rADC_CLK_PARAM  : natural := 6;
   constant rMSD_PARAM      : natural := 7;
   constant rBUSYADC_PARAM  : natural := 8;
+  
   --!Register array HPS-RW, FPGA-R
   type tHpsRegArray is array (0 to cHPS_REGISTERS-1) of
     std_logic_vector(cREG_WIDTH-1 downto 0);
   constant cHPS_REG_NULL : tHpsRegArray := (
     x"00000000", x"00000001", x"02faf080", x"000000FF",
-    x"0000028A", cFE_CLK_DUTY & cFE_CLK_DIV, cADC_CLK_DUTY & cADC_CLK_DIV , cCFG_PLANE & cTRG2HOLD,
-    cBUSY_LEN & cADC_DELAY, x"00000000", x"00000000", x"00000000",
+    x"0000028A", x"00000000", x"00000000" , x"00000000",
+    x"00000000", x"00000000", x"00000000", x"00000000",
     x"00000000", x"00000000", x"00000000", x"00000000"
     );                                  --!Null vector for HPS register array
+
 
   constant rGW_VER           : natural := 0;
   constant rINT_TS_MSB       : natural := 1;
@@ -70,7 +74,9 @@ package paperoPackage is
   constant rEXT_TRG_COUNT    : natural := 7;
   constant rINT_TRG_COUNT    : natural := 8;
   constant rFDI_FIFO_NUMWORD : natural := 9;
-  constant rPIUMONE          : natural := 15;
+  constant rPIUMONE          : natural := 15; 
+
+
   --!Register array HPS-R, FPGA-RW
   type tFpgaRegArray is array (0 to cFPGA_REGISTERS-1) of
     std_logic_vector(cREG_WIDTH-1 downto 0);
@@ -162,45 +168,35 @@ package paperoPackage is
     extTime : std_logic_vector(63 downto 0);  --!External Timestamp
   end record tF2hMetadata;
 
+  -- Types for the FE interface ------------------------------------------------
+  --!Input signals of a typical FIFO memory
+  type tFifoIn is record
+    data : std_logic_vector(cFIFO_WIDTH-1 downto 0);  --!Input data port
+    rd   : std_logic;                                     --!Read request
+    wr   : std_logic;                                     --!Write request
+  end record tFifoIn;
+
+  --!Output signals of a typical FIFO memory
+  type tFifoOut is record
+    q      : std_logic_vector(cFIFO_WIDTH-1 downto 0);  --!Output data port
+    aEmpty : std_logic;                                     --!Almost empty
+    empty  : std_logic;                                     --!Empty
+    aFull  : std_logic;                                     --!Almost full
+    full   : std_logic;                                     --!Full
+  end record tFifoOut;
+
+  --!Initialization constants for the upper types
+  constant c_FROM_FIFO_INIT : tFifoOut := (full   => '0',
+                                               empty  => '1',
+                                               aFull  => '0',
+                                               aEmpty => '0',
+                                               q      => (others => '0'));
+  constant c_TO_FIFO_INIT : tFifoIn := (wr   => '0',
+                                            data => (others => '0'),
+                                            rd   => '0');
+
+
   -- Components ----------------------------------------------------------------
-  --!Detects rising and falling edges of the input
-  component edge_detector_md is
-    generic(
-      channels : integer   := 1;
-      R_vs_F   : std_logic := '0'
-      );
-    port(
-      iCLK  : in  std_logic;
-      iRST  : in  std_logic;
-      iD    : in  std_logic_vector(channels - 1 downto 0);
-      oEDGE : out std_logic_vector(channels - 1 downto 0)
-      );
-  end component;
-
-  --!Generates a single clock pulse when a button is pressed
-  component Key_Pulse_Gen is
-    port(
-      KPG_CLK_in   : in  std_logic;
-      KPG_DATA_in  : in  std_logic_vector(1 downto 0);
-      KPG_DATA_out : out std_logic_vector(1 downto 0)
-      );
-  end component;
-
-  --!Allunga di un ciclo di clock lo stato "alto" del segnale di "Wait_Request"
-  component HighHold is
-    generic(
-      channels   : integer   := 1;
-      BAS_vs_BSS : std_logic := '0'
-      );
-    port(
-      CLK_in      : in  std_logic;
-      DATA_in     : in  std_logic_vector(channels - 1 downto 0);
-      DELAY_1_out : out std_logic_vector(channels - 1 downto 0);
-      DELAY_2_out : out std_logic_vector(channels - 1 downto 0);
-      DELAY_3_out : out std_logic_vector(channels - 1 downto 0);
-      DELAY_4_out : out std_logic_vector(channels - 1 downto 0)
-      );
-  end component;
 
   --!Temporizza l'invio di impulsi sul read_enable della FIFO
   component WR_Timer is
@@ -247,8 +243,8 @@ package paperoPackage is
   --!Reads the HK and sends them in a packet
   component hkReader is
     generic(
-      pFIFO_WIDTH : natural := 32;      --!FIFO data width
-      pPARITY     : string  := "EVEN";  --!Parity polarity ("EVEN" or "ODD")
+      pFIFO_WIDTH : natural;      --!FIFO data width 
+      pPARITY     : string;       --!Parity polarity ("EVEN" or "ODD")
       pGW_VER     : std_logic_vector(31 downto 0)  --!Firmware version from HoG
       );
     port (
@@ -263,20 +259,6 @@ package paperoPackage is
       oFIFO_DATA  : out std_logic_vector(pFIFO_WIDTH-1 downto 0);  --!Fifo Data in
       oFIFO_WR    : out std_logic;      --!Fifo write-request in
       iFIFO_AFULL : in  std_logic       --!Fifo almost-full flag
-      );
-  end component;
-
-  --!@copydoc CRC32.vhd
-  component CRC32 is
-    generic(
-      pINITIAL_VAL : std_logic_vector(31 downto 0) := x"FFFFFFFF"
-      );
-    port (
-      iCLK    : in  std_logic;          --!Main Clock (used at rising edge)
-      iRST    : in  std_logic;          --!Main Reset (synchronous)
-      iCRC_EN : in  std_logic;          --!Enable
-      iDATA   : in  std_logic_vector (31 downto 0);  --!Input to compute the CRC on
-      oCRC    : out std_logic_vector (31 downto 0)   --!CRC32 of the sequence
       );
   end component;
 
@@ -299,6 +281,7 @@ package paperoPackage is
       --# {{F2HFast|F2HFast}}
       iF2HFAST_CNT        : in  tControlIn;
       oF2HFAST_MD_RD      : out std_logic;
+      iF2HFAST_MD_EMPTY   : in  std_logic;
       iF2HFAST_METADATA   : in  tF2hMetadata;
       oF2HFAST_BUSY       : out std_logic;
       oF2HFAST_WARNING    : out std_logic;
@@ -325,7 +308,8 @@ package paperoPackage is
 
 
   --!@copydoc FFD.vhd
-  --!Unità di base per realizzare gli shift register dei moduli PRBS
+  --FIXME DA TOGLIEEREEEEEEEEEEE
+  --!Unita� di base per realizzare gli shift register dei moduli PRBS
   component FFD is
     port(
       iCLK    : in  std_logic;
@@ -336,27 +320,6 @@ package paperoPackage is
       );
   end component;
 
-  --!@copydoc PRBS8.vhd
-  --!Modulo per la generazione di dati pseudo-casuali a 8 bit
-  component PRBS8 is
-    port(
-      iCLK      : in  std_logic;
-      iRST      : in  std_logic;
-      iPRBS8_en : in  std_logic;
-      oDATA     : out std_logic_vector(7 downto 0)
-      );
-  end component;
-
-  --!@copydoc PRBS32.vhd
-  --!Modulo per la generazione di dati pseudo-casuali a 32 bit
-  component PRBS32 is
-    port(
-      iCLK       : in  std_logic;
-      iRST       : in  std_logic;
-      iPRBS32_en : in  std_logic;
-      oDATA      : out std_logic_vector(31 downto 0)
-      );
-  end component;
 
   --!@copydoc Test_Unit.vhd
   --!Unità di test per verificare il funzionamento della sola scheda DAQ
@@ -387,6 +350,7 @@ package paperoPackage is
       iEN          : in  std_logic;  -- Abilitazione del modulo FastData_Transmitter
       -- Settings Packet
       oMETADATA_RD : out std_logic;
+      --FIXME aggiungere iMETADATA_EMPTY : in  std_logic;
       iMETADATA    : in  tF2hMetadata;  --Packet header information all'FPGA
       -- Fifo Management
       iFIFO_DATA   : in  std_logic_vector(31 downto 0);  -- "Data_Output" della FIFO a monte del FastData_Transmitter
@@ -440,12 +404,13 @@ package paperoPackage is
       iEXT_TS             : in  std_logic_vector(63 downto 0);
       --# {{TrigBusy|TrigBusy}}
       iEXT_TRIG           : in  std_logic;
+      --# {{TrigBusy|TrigBusy}}
       oTRIG               : out std_logic;
       oBUSY               : out std_logic;
       iTRG_BUSIES_AND     : in  std_logic_vector(7 downto 0);
       iTRG_BUSIES_OR      : in  std_logic_vector(7 downto 0);
       --# {{FastDATA-Detector interface|FastDATA-Detector interface}}
-      iFASTDATA_DATA      : in  std_logic_vector(cREG_WIDTH-1 downto 0);
+      iFASTDATA_DATA      : in  std_logic_vector(pFDI_WIDTH-1 downto 0);
       iFASTDATA_WE        : in  std_logic;
       oFASTDATA_AFULL     : out std_logic;
       --# {{H2F_FIFO|H2F_FIFO}}
@@ -463,24 +428,24 @@ package paperoPackage is
       );
   end component;
 
-  --!@copydoc priorityEncoder.vhd
-  component priorityEncoder is
-    generic (
-      pFIFOWIDTH : natural;
-      pFIFODEPTH : natural
-      );
-    port (
-      iCLK            : in  std_logic;
-      iRST            : in  std_logic;
-      --# {{MULTI_FIFO Interface|MULTI_FIFO Interface}}
-      iMULTI_FIFO     : in  tMultiAdcFifoOut;
-      oMULTI_FIFO     : out tMultiAdcFifoIn;
-      --# {{FastDATA Interface|FastDATA Interface}}
-      oFASTDATA_DATA  : out std_logic_vector(pFIFOWIDTH-1 downto 0);
-      oFASTDATA_WE    : out std_logic;
-      iFASTDATA_AFULL : in  std_logic
-      );
-  end component;
+--  --!@copydoc priorityEncoder.vhd
+--  component priorityEncoder is
+--    generic (
+--      pFIFOWIDTH : natural;
+--      pFIFODEPTH : natural
+--      );
+--    port (
+--      iCLK            : in  std_logic;
+--      iRST            : in  std_logic;
+--      --# {{MULTI_FIFO Interface|MULTI_FIFO Interface}}
+--      iMULTI_FIFO     : in  tMultiAdcFifoOut;
+--      oMULTI_FIFO     : out tMultiAdcFifoIn;
+--      --# {{FastDATA Interface|FastDATA Interface}}
+--      oFASTDATA_DATA  : out std_logic_vector(pFIFOWIDTH-1 downto 0);
+--      oFASTDATA_WE    : out std_logic;
+--      iFASTDATA_AFULL : in  std_logic
+--      );
+--  end component;
 
 
   --!Generatore di segnale PWM
@@ -504,25 +469,20 @@ package paperoPackage is
   end component;
 
   --!@copydoc DetectorInterface.vhd
-  component DetectorInterface is
+  component DetectorInterface is    
+    generic(
+      pFASTDATA_WIDTH     : natural
+    );
     port (
       iCLK            : in  std_logic;
       iRST            : in  std_logic;
       --# {{Controls|Controls}}
-      iEN             : in  std_logic;
+      iCNT            : in  tControlIn;
       iTRIG           : in  std_logic;
-      oCNT            : out tControlIntfOut;
-      iMSD_CONFIG     : in  msd_config;
-      --# {{Detector 0|Detector 0}}
-      oFE0            : out tFpga2FeIntf;
-      oADC0           : out tFpga2AdcIntf;
-      --# {{Detector 1|Detector 1}}
-      oFE1            : out tFpga2FeIntf;
-      oADC1           : out tFpga2AdcIntf;
-      --# {{ADCs Inputs|ADCs Inputs}}
-      iMULTI_ADC      : in  tMultiAdc2FpgaIntf;
+      oCNT            : out tControlOut;
+      iEXTEND_BUSY    : in  std_logic_vector(15 downto 0);
       --# {{FastDATA Interface|FastDATA Interface}}
-      oFASTDATA_DATA  : out std_logic_vector(cREG_WIDTH-1 downto 0);
+      oFASTDATA_DATA  : out std_logic_vector(pFASTDATA_WIDTH-1 downto 0);
       oFASTDATA_WE    : out std_logic;
       iFASTDATA_AFULL : in  std_logic
       );
@@ -539,6 +499,7 @@ package paperoPackage is
       oERR      : out std_logic;
       iRD       : in  std_logic;
       iWR       : in  std_logic;
+      --FIXME da aggiungere oEMPTY    : out std_logic;
       iMETADATA : in  tF2hMetadata;
       oMETADATA : out tF2hMetadata
     );
@@ -546,56 +507,9 @@ package paperoPackage is
 
 
 
-  -- Functions -----------------------------------------------------------------
-  --!@brief Compute the parity bit of an 8-bit data with both polarities
-  --!@param[in] p String containing the polarity, "EVEN" or "ODD"
-  --!@param[in] d Input 8-bit data
-  --!@return  Parity bit of the incoming 8-bit data
-  function parity8bit (p : string; d : std_logic_vector(7 downto 0)) return std_logic;
-
-  --!@brief Compute the and between all the elements of a std_logic_vector
-  --!@param[in] slv Input std_logic_vector to be reduced to a std_logic
-  --!@return  And of all of the slv elements
-  function unary_and(slv : in std_logic_vector) return std_logic;
-
-  --!@brief Compute the or between all the elements of a std_logic_vector
-  --!@param[in] slv Input std_logic_vector to be reduced to a std_logic
-  --!@return  Or of all of the slv elements
-  function unary_or(slv : in std_logic_vector) return std_logic;
-
 end paperoPackage;
 
 --!@copydoc paperoPackage.vhd
 package body paperoPackage is
-  function parity8bit (p : string; d : std_logic_vector(7 downto 0)) return std_logic is
-    variable x : std_logic;
-  begin
-    if p = "ODD" then
-      x := not (d(0) xor d(1) xor d(2) xor d(3)
-                xor d(4) xor d(5) xor d(6) xor d(7));
-    elsif p = "EVEN" then
-      x := d(0) xor d(1) xor d(2) xor d(3)
-           xor d(4) xor d(5) xor d(6) xor d(7);
-    end if;
-    return x;
-  end function;
-
-  function unary_and(slv : in std_logic_vector) return std_logic is
-    variable and_v : std_logic := '1';  -- Null input returns '1'
-  begin
-    for i in slv'range loop
-      and_v := and_v and slv(i);
-    end loop;
-    return and_v;
-  end function;
-
-  function unary_or(slv : in std_logic_vector) return std_logic is
-    variable or_v : std_logic := '0';   -- Null input returns '0'
-  begin
-    for i in slv'range loop
-      or_v := or_v or slv(i);
-    end loop;
-    return or_v;
-  end function;
 
 end package body;

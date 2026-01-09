@@ -33,7 +33,7 @@ entity TdaqModule is
     iTRG_BUSIES_AND     : in  std_logic_vector(7 downto 0);
     iTRG_BUSIES_OR      : in  std_logic_vector(7 downto 0);
     --FastDATA-Detector interface
-    iFASTDATA_DATA      : in  std_logic_vector(cREG_WIDTH-1 downto 0);
+    iFASTDATA_DATA      : in  std_logic_vector(pFDI_WIDTH-1 downto 0);
     iFASTDATA_WE        : in  std_logic;
     oFASTDATA_AFULL     : out std_logic;
     --H2F
