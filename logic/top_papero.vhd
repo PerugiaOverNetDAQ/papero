@@ -12,7 +12,6 @@ use ieee.std_logic_unsigned.all;
 use work.intel_package.all;
 use work.paperoPackage.all;
 use work.basic_package.all;
-use work.FOOTpackage.all;
 
 
 --!@copydoc top_papero.vhd
@@ -227,23 +226,18 @@ architecture std of top_papero is
 
   --Detector interface
   signal sDetIntfRst    : std_logic;
-  signal sDetIntfEn     : std_logic;
-  signal sDetIntfCntOut : tControlIntfOut;
-  signal sDetIntfCfg    : msd_config;
+  signal sDetIntfEn     : tControlIn;
+  signal sDetIntfCntOut : tControlOut;
+  signal sExtendBusy    : std_logic_vector(15 downto 0);  
+  
   signal sDetIntfQ      : std_logic_vector(cREG_WIDTH-1 downto 0);
   signal sDetIntfWe     : std_logic;
   signal sDetIntfAfull  : std_logic;
-  signal sFeA           : tFpga2FeIntf;
-  signal sFeB           : tFpga2FeIntf;
-  signal sAdcA          : tFpga2AdcIntf;
-  signal sAdcB          : tFpga2AdcIntf;
-  signal sMultiAdc      : tMultiAdc2FpgaIntf;
 
   signal sCountersRst   : std_logic;
   signal sRegArrayRst   : std_logic;
   signal sRunMode       : std_logic;
 
-  signal sMultiAdcSynch : tMultiAdc2FpgaIntf;
   signal sBcoClkSynch   : std_logic;
   signal sBcoRstSynch   : std_logic;
   signal sBusy          : std_logic;
@@ -626,31 +620,20 @@ begin
       pulse_out => sRegArrayRst
       );
   sRunMode                 <= sRegArray(rGOTO_STATE)(4);
-  sDetIntfEn               <= not sRegArray(rUNITS_EN)(1);
-  sDetIntfCfg.feClkDuty    <= sRegArray(rFE_CLK_PARAM)(31 downto 16);
-  sDetIntfCfg.feClkDiv     <= sRegArray(rFE_CLK_PARAM)(15 downto 0);
-  sDetIntfCfg.adcClkDuty   <= sRegArray(rADC_CLK_PARAM)(31 downto 16);
-  sDetIntfCfg.adcClkDiv    <= sRegArray(rADC_CLK_PARAM)(15 downto 0);
-  sDetIntfCfg.cfgPlane     <= sRegArray(rMSD_PARAM)(31 downto 16);
-  sDetIntfCfg.intTrgPeriod <= (others => '0');
-  sDetIntfCfg.trg2Hold     <= sRegArray(rMSD_PARAM)(15 downto 0);
-  sDetIntfCfg.extendBusy   <= sRegArray(rBUSYADC_PARAM)(31 downto 16);
-  sDetIntfCfg.adcDelay     <= sRegArray(rBUSYADC_PARAM)(15 downto 0);
+  sDetIntfEn.en               <= not sRegArray(rUNITS_EN)(1);
+  sExtendBusy   <= sRegArray(rBUSYADC_PARAM)(31 downto 16);
   --!@brief Detector interface. **Reset shall be longer than 2 clock cycles**
   --!@todo Connect error, compl flags
   MsdInterface : DetectorInterface
+      generic map(pFASTDATA_WIDTH => 32)
     port map (
       iCLK            => sClk,
       iRST            => sDetIntfRst, --See the instance description
-      iEN             => sDetIntfEn,
+      iCNT            => sDetIntfEn,
       iTRIG           => sMainTrig,
       oCNT            => sDetIntfCntOut,  --Temporary
-      iMSD_CONFIG     => sDetIntfCfg,
-      oFE0            => sFeA,
-      oADC0           => sAdcA,
-      oFE1            => sFeB,
-      oADC1           => sAdcB,
-      iMULTI_ADC      => sMultiAdcSynch,
+      iEXTEND_BUSY    => sExtendBusy,
+
       oFASTDATA_DATA  => sDetIntfQ,
       oFASTDATA_WE    => sDetIntfWe,
       iFASTDATA_AFULL => sDetIntfAfull
@@ -658,38 +641,29 @@ begin
 
   -- GPIO connections ----------------------------------------------------------
   oNC_A              <= '0';
-  oFE_A_TEST         <= sFeA.TestOn;
-  oFE_A_RESET        <= sFeA.DRst;
-  oFE_A0_HOLD        <= not sFeA.Hold;
-  oFE_A0_SHIFT       <= sFeA.ShiftIn;
-  oFE_A0_CLK         <= not sFeA.Clk;
-  oFE_A1_HOLD        <= sFeA.Hold;
-  oFE_A1_SHIFT       <= sFeA.ShiftIn;
-  oFE_A1_CLK         <= sFeA.Clk;
-  oADC_A_CS          <= sAdcA.Cs;
-  oADC_A_SCLK        <= sAdcA.Sclk;
-  sMultiAdc(0).SData <= iADC_A_SDATA0;
-  sMultiAdc(1).SData <= iADC_A_SDATA1;
-  sMultiAdc(2).SData <= iADC_A_SDATA2;
-  sMultiAdc(3).SData <= iADC_A_SDATA3;
-  sMultiAdc(4).SData <= iADC_A_SDATA4;
+  oFE_A_TEST         <= '0';
+  oFE_A_RESET        <= '0';
+  oFE_A0_HOLD        <= '1';
+  oFE_A0_SHIFT       <= '0';
+  oFE_A0_CLK         <= '1';
+  oFE_A1_HOLD        <= '0';
+  oFE_A1_SHIFT       <= '0';
+  oFE_A1_CLK         <= '0';
+  oADC_A_CS          <= '0';
+  oADC_A_SCLK        <= '0';
+  
   --Detector side B
   oNC_B              <= '0';
-  oFE_B_TEST         <= sFeB.TestOn;
-  oFE_B_RESET        <= sFeB.DRst;
-  oFE_B0_HOLD        <= not sFeB.Hold;
-  oFE_B0_SHIFT       <= sFeB.ShiftIn;
-  oFE_B0_CLK         <= not sFeB.Clk;
-  oFE_B1_HOLD        <= sFeB.Hold;
-  oFE_B1_SHIFT       <= sFeB.ShiftIn;
-  oFE_B1_CLK         <= sFeB.Clk;
-  oADC_B_CS          <= sAdcB.Cs;
-  oADC_B_SCLK        <= sAdcB.Sclk;
-  sMultiAdc(5).SData <= iADC_B_SDATA0;
-  sMultiAdc(6).SData <= iADC_B_SDATA1;
-  sMultiAdc(7).SData <= iADC_B_SDATA2;
-  sMultiAdc(8).SData <= iADC_B_SDATA3;
-  sMultiAdc(9).SData <= iADC_B_SDATA4;
+  oFE_B_TEST         <= '0';
+  oFE_B_RESET        <= '0';
+  oFE_B0_HOLD        <= '1';
+  oFE_B0_SHIFT       <= '0';
+  oFE_B0_CLK         <= '1';
+  oFE_B1_HOLD        <= '0';
+  oFE_B1_SHIFT       <= '0';
+  oFE_B1_CLK         <= '0';
+  oADC_B_CS          <= '0';
+  oADC_B_SCLK        <= '0';
 
   oHK <= (others => '0'); --!@todo Add actual signals for debug
 
@@ -716,7 +690,7 @@ begin
       oQ   => sBcoRstSynch
       );
 
-  sMultiAdcSynch <= sMultiAdc;
+
   IOFFD : process(sClk)
   begin
     if rising_edge(sClk) then

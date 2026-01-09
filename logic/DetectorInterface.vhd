@@ -3,6 +3,7 @@
 --!@details Top to interconnect all of the u-strip-related modules
 --!@author Mattia Barbanera (mattia.barbanera@infn.it)
 --!@author Keida Kanxheri (keida.kanxheri@pg.infn.it)
+--!@author Stefan Frentescu, stefan.frentescu@studenti.unipg.it
 
 library ieee;
 use ieee.std_logic_1164.all;
@@ -12,41 +13,38 @@ use ieee.math_real.all;
 
 use work.basic_package.all;
 use work.paperoPackage.all;
-use work.FOOTpackage.all;
+
 
 --!@copydoc DetectorInterface.vhd
 entity DetectorInterface is
+  generic(
+    pFASTDATA_WIDTH     : natural := 32
+  );
   port (
     iCLK            : in  std_logic;    --!Main clock
     iRST            : in  std_logic;    --!Main reset
     -- Controls
-    iEN             : in  std_logic;    --!Enable
-    iTRIG           : in  std_logic;    --!Trigger
-    oCNT            : out tControlIntfOut;     --!Control signals in output
-    iMSD_CONFIG     : in  msd_config;  --!Configuration from the control registers
-    -- First FE-ADC chain ports
-    oFE0            : out tFpga2FeIntf;        --!Output signals to the FE1
-    oADC0           : out tFpga2AdcIntf;       --!Output signals to the ADC1
-    -- Second FE-ADC chain ports
-    oFE1            : out tFpga2FeIntf;        --!Output signals to the FE2
-    oADC1           : out tFpga2AdcIntf;       --!Output signals to the ADC2
-    -- ADCs Inputs
-    iMULTI_ADC      : in  tMultiAdc2FpgaIntf;  --!Input signals from the ADCs
+    iCNT            : in  tControlIn;     --!Enable
+    iTRIG           : in  std_logic;       --!Trigger
+    oCNT            : out tControlOUT;     --!Control signals in output
+    iEXTEND_BUSY    : in  std_logic_vector(15 downto 0);
     -- FastDATA Interface
-    oFASTDATA_DATA  : out std_logic_vector(cREG_WIDTH-1 downto 0);
-    oFASTDATA_WE    : out std_logic;
-    iFASTDATA_AFULL : in  std_logic
+    
+    oFASTDATA       : out tFifoFdiIn;
+    iFASTDATA       : in  tFifoFdiOut
     );
 end DetectorInterface;
 
 --!@copydoc DetectorInterface.vhd
 architecture std of DetectorInterface is
+  --State
+  type tState is (IDLE, RESET, RUN, COMPL);
+  signal sState, sNextState : tState := IDLE;
+  signal sCompl : std_logic := '0';
+
   --Plane interface
-  signal sCntOut       : tControlIntfOut;
-  signal sCntIn        : tControlIntfIn;
-  signal sFeIn         : tFe2FpgaIntf;
-  signal sMultiFifoOut : tMultiAdcFifoOut;
-  signal sMultiFifoIn  : tMultiAdcFifoIn;
+  signal sCntOut       : tControlOut;
+  signal sCntIn        : tControlIn;
 
   --Trigger and busy
   signal sExtTrigDel     : std_logic;
@@ -54,109 +52,174 @@ architecture std of DetectorInterface is
   signal sTrigDelBusy    : std_logic;
   signal sExtendBusy     : std_logic;
 
-  --MSD Conifigurations
-  signal sHpCfg : std_logic_vector (11 downto 0);
-  signal sAdcFast : std_logic;
+  --Signal
+  signal sFifoIn  : tFifoFdiIn;
+  signal sFifoOut : tFifoFdiOut;
+
+    -- Parameters
+  constant cNumDetector : integer := 2;
+  constant cNumAdc      : integer := 10;
+  constant cNumChannels : integer := 128;
+
+   -- Signals per generatore
+  signal sAdcIndex  : std_logic_vector(ceil_log2(cNumAdc/cNumDetector)-1 downto 0);
+  signal sChannel    : std_logic_vector(cFIFO_WIDTH-1 downto 0);
+
+  signal sAdcValue1,sAdcValue2 : std_logic_vector(cFIFO_WIDTH-1 downto 0);
+
+  
+
 
 begin
 
-  sCntIn.en     <= iEN;
-  sCntIn.start  <= sExtTrigDel;
-  sCntIn.slwClk <= '0';
-  sCntIn.slwEn  <= '0';
+  sCntIn.en     <= iCNT.en;
+  sCntIn.start  <= iTRIG;
 
-  oCNT.busy  <= sCntOut.busy or sTrigDelBusy or sExtendBusy;
+  sFifoOut.aEmpty <= iFASTDATA.aEmpty;
+  sFifoOut.empty  <= iFASTDATA.empty;
+  sFifoOut.aFull  <= iFASTDATA.aFull;
+  sFifoOut.full   <= iFASTDATA.full;
+
+  oCNT.busy  <= sCntIn.en or sCntIn.start;
   oCNT.error <= sCntOut.error;
   oCNT.reset <= sCntOut.reset;
   oCNT.compl <= sCntOut.compl;
 
-  sAdcFast   <= iMSD_CONFIG.cfgPlane(15);
-  --sCalTrigEn <= iMSD_CONFIG.cfgPlane(14); --Used only in FOOT
-  sHpCfg     <= iMSD_CONFIG.cfgPlane(11 downto 0);
 
-  --!@brief Delay the external trigger before the FE start
-  TRIG_DELAY : delay_timer
-    generic map(
-      pWIDTH => 16
-    )
-    port map(
-      iCLK   => iCLK,
-      iRST   => iRST,
-      iSTART => iTRIG,
-      iDELAY => iMSD_CONFIG.trg2Hold,
-      oBUSY  => sExtTrigDelBusy,
-      oOUT   => sExtTrigDel
-      );
 
   --!@brief delay the Trigger-delay busy
-  busy_delay : process (iCLK)
+  -- busy_delay : process (iCLK)
+  --begin
+  --  if (rising_edge(iCLK)) then
+  --    sTrigDelBusy   <= sExtTrigDelBusy;
+  --    sFeIn.ShiftOut <= '1';
+  --    sFeIn.initRst  <= iTRIG;
+  --  end if;
+  -- end process;
+
+  --!@brief Extend busy from [320 ns, ~20 ms], in multiples of 320 ns
+  --busy_extend : delay_timer
+   -- generic map(
+      --pWIDTH => 20
+    --)
+   -- port map(
+    --  iCLK   => iCLK,
+  --    iRST   => iRST,
+ --     iSTART => sCntOut.compl,
+--     iDELAY => iEXTEND_BUSY & "0000",
+--      oBUSY  => sExtendBusy,
+--      oOUT   => open
+--      );
+
+state_reg : process(iCLK)
   begin
-    if (rising_edge(iCLK)) then
-      sTrigDelBusy   <= sExtTrigDelBusy;
-      sFeIn.ShiftOut <= '1';
-      sFeIn.initRst  <= iTRIG;
+    if rising_edge(iCLK) then
+      if iRST = '1' then
+        sState <= RESET;
+      else
+        sState <= sNextState;
+      end if;
     end if;
   end process;
 
-  --!@brief Extend busy from [320 ns, ~20 ms], in multiples of 320 ns
-  busy_extend : delay_timer
-    generic map(
-      pWIDTH => 20
-    )
-    port map(
-      iCLK   => iCLK,
-      iRST   => iRST,
-      iSTART => sCntOut.compl,
-      iDELAY => iMSD_CONFIG.extendBusy & "0000",
-      oBUSY  => sExtendBusy,
-      oOUT   => open
-      );
+  state_next : process(sState, sCntIn.en, sCntIn.start, sCompl)
+  begin
+    case sState is
 
-  --!@brief Low-level multiple ADCs plane interface
-  DETECTOR_INTERFACE : multiAdcPlaneInterface
-    generic map (
-      pACTIVE_EDGE => "F" --"F": falling, "R": rising
-      )
-    port map (
-      iCLK          => iCLK,
-      iRST          => iRST,
-      -- control interface
-      oCNT          => sCntOut,
-      iCNT          => sCntIn,
-      iFE_CLK_DIV   => iMSD_CONFIG.feClkDiv,
-      iFE_CLK_DUTY  => iMSD_CONFIG.feClkDuty,
-      iADC_CLK_DIV  => iMSD_CONFIG.adcClkDiv,
-      iADC_CLK_DUTY => iMSD_CONFIG.adcClkDuty,
-      iADC_DELAY    => iMSD_CONFIG.adcDelay,
-      iCFG_FE       => sHpCfg,
-      iADC_FAST     => sAdcFast,
-      -- FE interface
-      oFE0          => oFE0,
-      oFE1          => oFE1,
-      iFE           => sFeIn,
-      -- ADC interface
-      oADC0         => oADC0,
-      oADC1         => oADC1,
-      iMULTI_ADC    => iMULTI_ADC,
-      -- FIFO output interface
-      oMULTI_FIFO   => sMultiFifoOut,
-      iMULTI_FIFO   => sMultiFifoIn
-      );
+      when IDLE =>
+        if (sCntIn.en = '1' and sCntIn.start = '1') then
+          sNextState <= RUN;
+        else 
+          sNextState <= IDLE;
+        end if;
 
-  --!@brief Collects data from the MSD and assembles them in a single packet
-  EVENT_BUILDER : priorityEncoder
-    generic map (
-      pFIFOWIDTH => cREG_WIDTH,         --32
-      pFIFODEPTH => cLENCONV_DEPTH
-      )
-    port map (
-      iCLK            => iCLK,
-      iRST            => iRST,
-      iMULTI_FIFO     => sMultiFifoOut,
-      oMULTI_FIFO     => sMultiFifoIn,
-      oFASTDATA_DATA  => oFASTDATA_DATA,
-      oFASTDATA_WE    => oFASTDATA_WE,
-      iFASTDATA_AFULL => iFASTDATA_AFULL
-      );
+      when RESET =>
+        sNextState <= IDLE;
+
+      when RUN =>
+        if sCompl = '1' then
+          sNextState <= COMPL;
+        else 
+          sNextState <= RUN;
+        end if;
+
+      when COMPL =>
+        sNextState <= IDLE;
+
+      when others =>
+        sNextState <= RESET;
+
+    end case;
+  end process;
+
+
+datapath : process(iCLK)
+  variable vFifoReady : std_logic;
+  begin
+    if rising_edge(iCLK) then
+      if iRST = '1' then
+        sAdcIndex <= (others=>'0');
+        sChannel   <= (others=>'0');
+        sCompl <= '0';
+        sFifoIn.wr   <= '0';
+        sCntOut.reset <= '0';
+        sCntOut.error <= '0';
+        sCntOut.compl <= '0';
+        vFifoReady := '0';
+      else
+        sFifoIn.wr <= '0';  -- la metto di default uguale a 0
+        vFifoReady := not sFifoOut.aFull;
+        case sState is
+
+        when RESET =>
+          sAdcIndex <= (others=>'0');
+          sChannel   <= (others=>'0');
+          sCompl <= '0';
+          sFifoIn.wr   <= '0';
+          sCntOut.reset <= '0';
+          sCntOut.error <= '0';
+          sCntOut.compl <= '0';
+
+        when IDLE =>
+            sAdcIndex <= (others=>'0');
+            sChannel <= (others=>'0');
+            sCompl <= '0';
+        
+        when RUN =>
+        sCntOut.compl <= '0';
+          -- calcola il valore del canale dell'ADC corrente
+          -- ogni ADC ha 128 valori consecutivi
+          sAdcValue1 <= (slv2int(sAdcIndex)*cNumDetector)*cNumChannels + sChannel;
+          sAdcValue2 <= (slv2int(sAdcIndex)*cNumDetector+1)*cNumChannels + sChannel;
+          
+          if sFifoOut.aFull = '0' then
+            sFifoIn.wr   <= vFifoReady;  -- scrittura valida
+          end if;
+          -- faccio si che i dati che genero siano sempre compresi nei limiti dei canali giusti
+          if sAdcIndex = (cNumAdc/cNumDetector)-1 then
+            sAdcIndex <= (others => '0');
+            if sChannel = cNumChannels-1 then
+              sCompl <= '1';
+            else
+              sChannel <= sChannel + vFifoReady;
+            end if;
+          else
+            sAdcIndex <= sAdcIndex + vFifoReady;
+          end if;
+
+          when COMPL =>
+          sCntOut.compl <= '1';
+
+          when others =>
+          sCntOut.error <= '1';
+        end case;
+        end if;
+      end if;
+end process;
+
+-- impacchetta come nel priorityEncoder: word2 & word1
+sFifoIn.data <= sAdcValue2(14 downto 0) & "00" & sAdcValue1(14 downto 0) & "00";
+oFASTDATA.data <= sFifoIn.data;
+oFASTDATA.wr <= sFifoIn.wr;
 
 end architecture std;
