@@ -281,7 +281,6 @@ package paperoPackage is
       --# {{F2HFast|F2HFast}}
       iF2HFAST_CNT        : in  tControlIn;
       oF2HFAST_MD_RD      : out std_logic;
-      iF2HFAST_MD_EMPTY   : in  std_logic;
       iF2HFAST_METADATA   : in  tF2hMetadata;
       oF2HFAST_BUSY       : out std_logic;
       oF2HFAST_WARNING    : out std_logic;

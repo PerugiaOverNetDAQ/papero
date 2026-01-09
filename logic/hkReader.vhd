@@ -247,6 +247,9 @@ begin
   sCrc.data <= sFifoData;
   --!Compute the CRC32 for packet content (except for SoP, Len, and EoP)
   CRC32_compute : CRC32
+    generic map (
+      pINITIAL_VAL => x"FFFFFFFF"
+    )
     port map (
       iCLK    => iCLK,
       iRST    => sCrc.rst,

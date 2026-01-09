@@ -25,6 +25,7 @@ use IEEE.STD_LOGIC_UNSIGNED.all;
 use IEEE.NUMERIC_STD.all;
 
 use work.paperoPackage.all;
+use work.basic_package.all;
 
 --!@copydoc Config_Receiver.vhd
 entity Config_Receiver is
@@ -119,7 +120,7 @@ begin
   CRC32_on          <= fwv_enable_R or header_enable_R or (payload_enable_WRT and payload_enable);  -- Abilitazione del modulo CRC32 (SEARCH_FWV, SEARCH_HEADER, ACQUISITION)
 
   -- Instanziamento dello User Edge Detector per generare gli impulsi di Read_Enable che identificano una specifica transizione da uno stato all'altro della macchina.
-  rise_edge_implementation : edge_detector_md
+  rise_edge_implementation : edge_detector_2
     generic map(channels => 14, R_vs_F => '0')
     port map(
       iCLK      => CR_CLK_in,
@@ -155,7 +156,7 @@ begin
       );
 
   -- Instanziamento dello User Edge Detector per generare gli impulsi di "synch_pulse" per risincronizzare l'uscita della FIFO con l'ingresso del ricevitore quando la FIFO passa da vuota a non vuota.
-  fall_edge_implementation : edge_detector_md
+  fall_edge_implementation : edge_detector_2
     generic map(channels => 2, R_vs_F => '1')
     port map(
       iCLK     => CR_CLK_in,
@@ -168,11 +169,11 @@ begin
 
   -- Instanziamento dell'HighHold per evitare che il "Wait_Request" rimanga alto per un solo ciclo di clock (ma almeno 2), situazione potenzialmente dannosa per la macchina.
   Hold_Wait_Request : HighHold
-    generic map(channels => 1, BAS_vs_BSS => '1')
+    generic map(pCH => 1)
     port map(
-      CLK_in         => CR_CLK_in,
-      DATA_in(0)     => fifo_wait_request,
-      DELAY_1_out(0) => fifo_wait_request_HH
+      iCLK         => CR_CLK_in,
+      iDATA(0)     => fifo_wait_request,
+      oDEL_1(0) => fifo_wait_request_HH
       );
 
   -- Instanziamento del WR_Timer per generare gli impulsi di Read_Enable specifici per lo stato di "ACQUISITION".

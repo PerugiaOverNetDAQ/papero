@@ -9,7 +9,9 @@ library IEEE;
 use IEEE.STD_LOGIC_1164.all;
 use IEEE.STD_LOGIC_UNSIGNED.all;
 use IEEE.NUMERIC_STD.all;
+
 use work.paperoPackage.all;
+use work.basic_package.all;
 
 
 --!@copydoc Test_Unit.vhd
@@ -112,7 +114,7 @@ begin
   sTrig      <= (sEN2 and iTRIG);  -- Segnale usato per trasportare il trigger iniettato sulla porta "iTRIG"
 
   -- Instanziamento dello User Edge Detector per generare gli impulsi (di 1 ciclo di clock) che segnalano il passaggio da uno stato all'altro.
-  rise_edge_implementation : edge_detector_md
+  rise_edge_implementation : edge_detector_2
     generic map(
       channels => 12,
       R_vs_F   => '0'
@@ -147,7 +149,7 @@ begin
       );
 
   -- Instanziamento dello User Edge Detector per generare gli impulsi di "synch_pulse" per risincronizzare l'uscita della FIFO con l'ingresso del ricevitore quando la FIFO passa da vuota a non vuota.
-  fall_edge_implementation : edge_detector_md
+  fall_edge_implementation : edge_detector_2
     generic map(
       channels => 1,
       R_vs_F   => '1'
@@ -164,8 +166,8 @@ begin
     port map(
       iCLK      => iCLK,
       iRST      => sInternalReset_ps,
-      iPRBS8_en => sPRBS8_en,
-      oDATA     => sPRBS8_out
+      iEN => sPRBS8_en,
+      oPRBS     => sPRBS8_out
       );
 
   -- Generazione del dato pseudo-casuale a 32 bit nella PRIMA modalità operativa
@@ -173,8 +175,8 @@ begin
     port map(
       iCLK       => iCLK,
       iRST       => sInternalReset_ps,
-      iPRBS32_en => sPRBS32_en,
-      oDATA      => sPRBS32_out1
+      iEN => sPRBS32_en,
+      oPRBS      => sPRBS32_out1
       );
 
   -- Generazione del dato pseudo-casuale a 32 bit nella SECONDA modalità operativa
@@ -182,8 +184,8 @@ begin
     port map(
       iCLK       => iCLK,
       iRST       => sInternalReset_ps,
-      iPRBS32_en => sPRBS32_en2,
-      oDATA      => sData2
+      iEN => sPRBS32_en2,
+      oPRBS      => sData2
       );
 
   -- Generazione del dato pseudo-casuale a 32 bit nella TERZA modalità operativa
@@ -191,8 +193,8 @@ begin
     port map(
       iCLK       => iCLK,
       iRST       => sInternalReset_ps,
-      iPRBS32_en => sPRBS32_en3,
-      oDATA      => sData3
+      iEN => sPRBS32_en3,
+      oPRBS      => sData3
       );
 
 

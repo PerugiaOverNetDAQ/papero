@@ -7,6 +7,7 @@ use IEEE.STD_LOGIC_1164.all;
 use IEEE.STD_LOGIC_UNSIGNED.all;
 use IEEE.NUMERIC_STD.all;
 use work.paperoPackage.all;
+use work.basic_package.all;
 
 --!@copydoc WR_Timer.vhd
 entity WR_Timer is
@@ -39,7 +40,7 @@ begin
   standby <= WRT_STANDBY_in;  -- Assegnazione della porta di WRT_STANDBY_in ad un segnale interno
 
   -- Instanziamento dello User Edge Detector
-  rise_edge_implementation : edge_detector_md
+  rise_edge_implementation : edge_detector_2
     generic map(
       channels => 1,
       R_vs_F   => '0'
