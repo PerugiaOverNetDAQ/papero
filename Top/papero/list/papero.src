@@ -36,7 +36,7 @@ logic/VHDL_basic_functions/sync_edge.vhd
 logic/VHDL_basic_functions/shift_register.vhd
 logic/VHDL_basic_functions/pulse_generator.vhd
 logic/VHDL_basic_functions/PRBS32.vhd
-logic/VHDL_basic_functions/PRSB8.vhd
+logic/VHDL_basic_functions/PRBS8.vhd
 logic/VHDL_basic_functions/parametric_fifo_synch.vhd
 logic/VHDL_basic_functions/parametric_fifo_dp.vhd
 logic/VHDL_basic_functions/HighHold.vhd
