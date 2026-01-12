@@ -218,7 +218,7 @@ datapath : process(iCLK)
 end process;
 
 -- impacchetta come nel priorityEncoder: word2 & word1
-sFifoIn.data <= sAdcValue2(14 downto 0) & "00" & sAdcValue1(14 downto 0) & "00";
+sFifoIn.data <= sAdcValue2(13 downto 0) & "00" & sAdcValue1(13 downto 0) & "00";
 oFASTDATA.data <= sFifoIn.data;
 oFASTDATA.wr <= sFifoIn.wr;
 
