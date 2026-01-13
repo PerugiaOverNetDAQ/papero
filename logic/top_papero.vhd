@@ -230,7 +230,10 @@ architecture std of top_papero is
   signal sDetIntfCntOut : tControlOut;
   signal sExtendBusy    : std_logic_vector(15 downto 0);  
   
-  signal sDetIntfQ      : std_logic_vector(cREG_WIDTH-1 downto 0);
+  signal sDetIntO      : tFifoFdiIn;
+  signal sDetIntI      : tFifoFdiOut;
+
+  --signal sDetIntfQ      : std_logic_vector(cREG_WIDTH-1 downto 0);
   signal sDetIntfWe     : std_logic;
   signal sDetIntfAfull  : std_logic;
 
@@ -563,9 +566,9 @@ begin
       iTRG_BUSIES_AND     => sTrgBusiesAnd,
       iTRG_BUSIES_OR      => sTrgBusiesOr,
       --
-      iFASTDATA_DATA      => sDetIntfQ,
-      iFASTDATA_WE        => sDetIntfWe,
-      oFASTDATA_AFULL     => sDetIntfAfull,
+      iFASTDATA_DATA      => sDetIntO.data,
+      iFASTDATA_WE        => sDetIntO.wr,
+      oFASTDATA_AFULL     => sDetIntI.Afull,
       --
       iFIFO_H2F_EMPTY     => fifo_h2f_empty,
       iFIFO_H2F_DATA      => fifo_h2f_data_out,
@@ -634,10 +637,9 @@ begin
       oCNT            => sDetIntfCntOut,  --Temporary
       iEXTEND_BUSY    => sExtendBusy,
 
-      oFASTDATA_DATA  => sDetIntfQ,
-      oFASTDATA_WE    => sDetIntfWe,
-      iFASTDATA_AFULL => sDetIntfAfull
-      );
+      oFASTDATA       => sDetIntO,
+      iFASTDATA       => sDetIntI
+    );
 
   -- GPIO connections ----------------------------------------------------------
   oNC_A              <= '0';

@@ -473,17 +473,17 @@ package paperoPackage is
       pFASTDATA_WIDTH     : natural
     );
     port (
-      iCLK            : in  std_logic;
-      iRST            : in  std_logic;
-      --# {{Controls|Controls}}
-      iCNT            : in  tControlIn;
-      iTRIG           : in  std_logic;
-      oCNT            : out tControlOut;
+      iCLK            : in  std_logic;    --!Main clock
+      iRST            : in  std_logic;    --!Main reset
+    -- Controls
+      iCNT            : in  tControlIn;     --!Enable
+      iTRIG           : in  std_logic;       --!Trigger
+      oCNT            : out tControlOUT;     --!Control signals in output
       iEXTEND_BUSY    : in  std_logic_vector(15 downto 0);
-      --# {{FastDATA Interface|FastDATA Interface}}
-      oFASTDATA_DATA  : out std_logic_vector(pFASTDATA_WIDTH-1 downto 0);
-      oFASTDATA_WE    : out std_logic;
-      iFASTDATA_AFULL : in  std_logic
+    -- FastDATA Interface
+    
+      oFASTDATA       : out tFifoFdiIn;
+      iFASTDATA       : in  tFifoFdiOut
       );
   end component;
 
