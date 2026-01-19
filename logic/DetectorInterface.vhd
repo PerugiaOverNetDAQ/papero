@@ -46,10 +46,7 @@ architecture std of DetectorInterface is
   signal sCntOut       : tControlOut;
   signal sCntIn        : tControlIn;
 
-  --Trigger and busy
-  signal sExtTrigDel     : std_logic;
-  signal sExtTrigDelBusy : std_logic;
-  signal sTrigDelBusy    : std_logic;
+  --Busy Extend
   signal sExtendBusy     : std_logic;
 
   --Signal
@@ -80,49 +77,43 @@ begin
   sFifoOut.aFull  <= iFASTDATA.aFull;
   sFifoOut.full   <= iFASTDATA.full;
 
+  -- impacchetta come nel priorityEncoder: word1 & word2
+  sFifoIn.data <=  sAdcValue1(13 downto 0) & "00" & sAdcValue2(13 downto 0) & "00";
+  oFASTDATA.data <= sFifoIn.data;
+  oFASTDATA.wr <= sFifoIn.wr;
+  oFASTDATA.rd <= sFifoIn.rd;
+
   oCNT.busy  <= sCntIn.en or sCntIn.start;
   oCNT.error <= sCntOut.error;
   oCNT.reset <= sCntOut.reset;
   oCNT.compl <= sCntOut.compl;
 
-
-
-  --!@brief delay the Trigger-delay busy
-  -- busy_delay : process (iCLK)
-  --begin
-  --  if (rising_edge(iCLK)) then
-  --    sTrigDelBusy   <= sExtTrigDelBusy;
-  --    sFeIn.ShiftOut <= '1';
-  --    sFeIn.initRst  <= iTRIG;
-  --  end if;
-  -- end process;
-
   --!@brief Extend busy from [320 ns, ~20 ms], in multiples of 320 ns
-  --busy_extend : delay_timer
-   -- generic map(
-      --pWIDTH => 20
-    --)
-   -- port map(
-    --  iCLK   => iCLK,
-  --    iRST   => iRST,
- --     iSTART => sCntOut.compl,
---     iDELAY => iEXTEND_BUSY & "0000",
---      oBUSY  => sExtendBusy,
---      oOUT   => open
---      );
+  busy_extend : delay_timer
+    generic map(
+      pWIDTH => 20
+    )
+    port map(
+      iCLK   => iCLK,
+      iRST   => iRST,
+      iSTART => sCompl,
+      iDELAY => iEXTEND_BUSY & "0000",
+      oBUSY  => sExtendBusy,
+      oOUT   => open
+      );
 
-state_reg : process(iCLK)
-  begin
-    if rising_edge(iCLK) then
-      if iRST = '1' then
-        sState <= RESET;
-      else
-        sState <= sNextState;
+  state_reg : process(iCLK)
+    begin
+      if rising_edge(iCLK) then
+        if iRST = '1' then
+          sState <= RESET;
+        else
+          sState <= sNextState;
+        end if;
       end if;
-    end if;
-  end process;
+    end process;
 
-  state_next : process(sState, sCntIn.en, sCntIn.start, sCompl)
+  state_next : process(sState, sCntIn.en, sCntIn.start, sCompl, sCntOut.busy, sExtendBusy)
   begin
     case sState is
 
@@ -144,7 +135,11 @@ state_reg : process(iCLK)
         end if;
 
       when COMPL =>
-        sNextState <= IDLE;
+        if (sCntOut.busy = '1' or sExtendBusy = '1') then
+          sNextState <= COMPL;
+        else
+          sNextState <= IDLE;
+        end if;
 
       when others =>
         sNextState <= RESET;
@@ -152,74 +147,79 @@ state_reg : process(iCLK)
     end case;
   end process;
 
-
+sFifoIn.rd <= '0'; --not used
 datapath : process(iCLK)
   variable vFifoReady : std_logic;
   begin
     if rising_edge(iCLK) then
       if iRST = '1' then
-        sAdcIndex <= (others=>'0');
+        sAdcIndex  <= (others=>'0');
         sChannel   <= (others=>'0');
         sCompl <= '0';
         sFifoIn.wr   <= '0';
+        sCntOut.reset <= '1';
+        sCntOut.error <= '0';
+        sCntOut.compl <= '0';
+        sCntOut.busy  <= '1';
+      else
+        sAdcIndex <= (others=>'0');
+        sFifoIn.wr <= '0';  -- la metto di default uguale a 0
+        sCompl <= '0';
+
         sCntOut.reset <= '0';
         sCntOut.error <= '0';
         sCntOut.compl <= '0';
-        vFifoReady := '0';
-      else
-        sFifoIn.wr <= '0';  -- la metto di default uguale a 0
+
         vFifoReady := not sFifoOut.aFull;
+        -- calcola il valore del canale dell'ADC corrente:
+        -- ogni ADC ha 128 valori consecutivi
+        sAdcValue1 <= (slv2int(sAdcIndex)*cNumDetector)*cNumChannels + sChannel;
+        sAdcValue2 <= (slv2int(sAdcIndex)*cNumDetector+1)*cNumChannels + sChannel;
+
         case sState is
+          when RESET =>
+            sCntOut.reset <= '1';
+            sCntOut.busy  <= '1';
+            sChannel   <= (others=>'0');
 
-        when RESET =>
-          sAdcIndex <= (others=>'0');
-          sChannel   <= (others=>'0');
-          sCompl <= '0';
-          sFifoIn.wr   <= '0';
-          sCntOut.reset <= '0';
-          sCntOut.error <= '0';
-          sCntOut.compl <= '0';
-
-        when IDLE =>
-            sAdcIndex <= (others=>'0');
-            sChannel <= (others=>'0');
-            sCompl <= '0';
-        
-        when RUN =>
-        sCntOut.compl <= '0';
-          -- calcola il valore del canale dell'ADC corrente
-          -- ogni ADC ha 128 valori consecutivi
-          sAdcValue1 <= (slv2int(sAdcIndex)*cNumDetector)*cNumChannels + sChannel;
-          sAdcValue2 <= (slv2int(sAdcIndex)*cNumDetector+1)*cNumChannels + sChannel;
+          when IDLE =>
+            sChannel   <= (others=>'0');
+            sCntOut.busy  <= '0';
           
-          if sFifoOut.aFull = '0' then
-            sFifoIn.wr   <= vFifoReady;  -- scrittura valida
-          end if;
-          -- faccio si che i dati che genero siano sempre compresi nei limiti dei canali giusti
-          if sAdcIndex = (cNumAdc/cNumDetector)-1 then
-            sAdcIndex <= (others => '0');
-            if sChannel = cNumChannels-1 then
-              sCompl <= '1';
-            else
-              sChannel <= sChannel + vFifoReady;
+          when RUN =>
+            sCntOut.busy  <= '1';
+            --sAdcValue1 <= (slv2int(sAdcIndex)*cNumDetector)*cNumChannels + sChannel;
+            --sAdcValue2 <= (slv2int(sAdcIndex)*cNumDetector+1)*cNumChannels + sChannel;
+            
+            if sFifoOut.aFull = '0' then
+              sFifoIn.wr   <= vFifoReady;  -- scrittura valida
             end if;
-          else
-            sAdcIndex <= sAdcIndex + vFifoReady;
-          end if;
-
+            -- faccio si che i dati che genero siano sempre compresi nei limiti dei canali giusti
+            if sAdcIndex < (cNumAdc/cNumDetector)-1 then
+              sAdcIndex <= sAdcIndex + vFifoReady;
+            else
+              sAdcIndex <= (others => '0');
+              sChannel <= sChannel + vFifoReady; --Aggiungo 1 solo quando ho finito gli ADC
+            end if;
+            
+            if (sAdcIndex = (cNumAdc/cNumDetector)-2) and (sChannel = cNumChannels-1) then
+              sCompl <= '1';
+            end if;
+            
           when COMPL =>
-          sCntOut.compl <= '1';
+            sChannel   <= (others=>'0');
+            sCntOut.compl <= '1';
+            sCntOut.busy  <= '0';
 
           when others =>
-          sCntOut.error <= '1';
-        end case;
+            sChannel   <= (others=>'0');
+            sCntOut.busy  <= '1';
+            sCntOut.error <= '1';
+        
+          end case;
         end if;
       end if;
 end process;
 
--- impacchetta come nel priorityEncoder: word2 & word1
-sFifoIn.data <= sAdcValue2(13 downto 0) & "00" & sAdcValue1(13 downto 0) & "00";
-oFASTDATA.data <= sFifoIn.data;
-oFASTDATA.wr <= sFifoIn.wr;
 
 end architecture std;
