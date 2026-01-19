@@ -83,7 +83,7 @@ begin
   oFASTDATA.wr <= sFifoIn.wr;
   oFASTDATA.rd <= sFifoIn.rd;
 
-  oCNT.busy  <= sCntIn.en or sCntIn.start;
+  oCNT.busy  <= sCntOut.busy or sExtendBusy;
   oCNT.error <= sCntOut.error;
   oCNT.reset <= sCntOut.reset;
   oCNT.compl <= sCntOut.compl;
