@@ -543,7 +543,7 @@ begin
 
   --!@brief Wrapper for all of the Trigger and Data Acquisition modules
   sTrgBusiesAnd   <= (others => '0');
-  sTrgBusiesOr    <= (0 => sDetIntfCntOut.busy, 1 => sDetIntfAfull, others => '0');
+  sTrgBusiesOr    <= (0 => sDetIntfCntOut.busy, 1 => sDetIntI.aFull, others => '0');
   TdaqModule_i : TdaqModule
     generic map (
       pFDI_WIDTH => cFDI_WIDTH,
