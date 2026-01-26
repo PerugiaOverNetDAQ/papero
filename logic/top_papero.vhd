@@ -100,53 +100,36 @@ entity top_papero is
     SW : in std_logic_vector(3 downto 0);
 
     --- GPIO -------------------------------------------------------------------
-    --Detector side A
-    oNC_A          : out std_logic;     --GPIO1-16
-    oFE_A_TEST     : out std_logic;     --GPIO1-0
-    oFE_A_RESET    : out std_logic;     --GPIO1-2
-    oFE_A0_HOLD    : out std_logic;     --GPIO1-4
-    oFE_A0_SHIFT   : out std_logic;     --GPIO1-8
-    oFE_A0_CLK     : out std_logic;     --GPIO1-12
-    oFE_A1_HOLD    : out std_logic;     --GPIO1-6
-    oFE_A1_SHIFT   : out std_logic;     --GPIO1-10
-    oFE_A1_CLK     : out std_logic;     --GPIO1-14
-    oADC_A_CS      : out std_logic;     --GPIO1-22
-    oADC_A_SCLK    : out std_logic;     --GPIO1-24
-    iADC_A_CS_RET  : in  std_logic;     --GPIO1-18
-    iADC_A_SCK_RET : in  std_logic;     --GPIO1-20
-    iADC_A_SDATA0  : in  std_logic;     --GPIO1-26
-    iADC_A_SDATA1  : in  std_logic;     --GPIO1-28
-    iADC_A_SDATA2  : in  std_logic;     --GPIO1-30
-    iADC_A_SDATA3  : in  std_logic;     --GPIO1-32
-    iADC_A_SDATA4  : in  std_logic;     --GPIO1-34
-    --Detector side B
-    oNC_B          : out std_logic;     --GPIO1-17
-    oFE_B_TEST     : out std_logic;     --GPIO1-3
-    oFE_B_RESET    : out std_logic;     --GPIO1-1
-    oFE_B0_HOLD    : out std_logic;     --GPIO1-5
-    oFE_B0_SHIFT   : out std_logic;     --GPIO1-9
-    oFE_B0_CLK     : out std_logic;     --GPIO1-13
-    oFE_B1_HOLD    : out std_logic;     --GPIO1-7
-    oFE_B1_SHIFT   : out std_logic;     --GPIO1-11
-    oFE_B1_CLK     : out std_logic;     --GPIO1-15
-    oADC_B_CS      : out std_logic;     --GPIO1-23
-    oADC_B_SCLK    : out std_logic;     --GPIO1-25
-    iADC_B_CS_RET  : in  std_logic;     --GPIO1-19
-    iADC_B_SCK_RET : in  std_logic;     --GPIO1-21
-    iADC_B_SDATA0  : in  std_logic;     --GPIO1-27
-    iADC_B_SDATA1  : in  std_logic;     --GPIO1-29
-    iADC_B_SDATA2  : in  std_logic;     --GPIO1-31
-    iADC_B_SDATA3  : in  std_logic;     --GPIO1-33
-    iADC_B_SDATA4  : in  std_logic;     --GPIO1-35
-    --Central Acquisition side
-    iBCO_CLK       : in  std_logic;     --GPIO0-16
-    iTRIG_SCL      : in  std_logic;     --GPIO0-0
-    iTRIG_SDA      : in  std_logic;     --GPIO0-32
-    oBUSY          : out std_logic;     --GPIO0-1
-    oTRIG          : out std_logic;     --GPIO0-27
+    -- HEFs Signals
+    oIMON_CONV  : out std_logic_vector(1 downto 0);
+    oIMON_SCK : out std_logic_vector(1 downto 0);
+    iIMON_SDO : in  std_logic_vector(1 downto 0);
+    iVSET_SDA : in  std_logic_vector(1 downto 0);
+    oVSET_SCL : out std_logic_vector(1 downto 0);
+    iADC_DATA_1 : in  std_logic_vector(1 downto 0);
+    iADC_DATA_2 : in  std_logic_vector(1 downto 0);
+    iADC_DATA_3 : in  std_logic_vector(1 downto 0);
+    iADC_DATA_4 : in  std_logic_vector(1 downto 0);
+    iADC_DATA_5 : in  std_logic_vector(1 downto 0);
+    iADC_DATA_6 : in  std_logic_vector(1 downto 0);
+    iADC_DATA_7 : in  std_logic_vector(1 downto 0);
+    oADC_CONV : out std_logic_vector(1 downto 0);
+    oADC_SCK  : out std_logic_vector(1 downto 0);
+    oVA_DRESET  : out std_logic_vector(1 downto 0);
+    oVA_HOLDb : out std_logic_vector(1 downto 0);
+    oVA_SHIFT_IN  : out std_logic_vector(1 downto 0);
+    oVA_CLKb  : out std_logic_vector(1 downto 0);
+    -- HEFs Grounds
+    iHEF_GND : in  std_logic_vector(35 downto 0);
 
-    oHK : out std_logic_vector(30 downto 0)  --All the remainings
-
+    --- ARDUINO HEADER ---------------------------------------------------------
+    -- Central DAQ
+    iCTX_TIME_CLK : in  std_logic;
+    iCTX_TRIG_SCL : in  std_logic;
+    iCTX_TRIG_SDA : in  std_logic;
+    oCTX_BUSY : out std_logic;
+    oCTX_TRIG : out std_logic;
+    oCTX_GND : out  std_logic_vector(11 downto 0)
     );
 end entity top_papero;
 
@@ -661,43 +644,50 @@ begin
       );
 
   -- GPIO connections ----------------------------------------------------------
-  oNC_A              <= '0';
-  oFE_A_TEST         <= sFeA.TestOn;
-  oFE_A_RESET        <= sFeA.DRst;
-  oFE_A0_HOLD        <= not sFeA.Hold;
-  oFE_A0_SHIFT       <= sFeA.ShiftIn;
-  oFE_A0_CLK         <= not sFeA.Clk;
-  oFE_A1_HOLD        <= sFeA.Hold;
-  oFE_A1_SHIFT       <= sFeA.ShiftIn;
-  oFE_A1_CLK         <= sFeA.Clk;
-  oADC_A_CS          <= sAdcA.Cs;
-  oADC_A_SCLK        <= sAdcA.Sclk;
-  sMultiAdc(0).SData <= iADC_A_SDATA0;
-  sMultiAdc(1).SData <= iADC_A_SDATA1;
-  sMultiAdc(2).SData <= iADC_A_SDATA2;
-  sMultiAdc(3).SData <= iADC_A_SDATA3;
-  sMultiAdc(4).SData <= iADC_A_SDATA4;
-  --Detector side B
-  oNC_B              <= '0';
-  oFE_B_TEST         <= sFeB.TestOn;
-  oFE_B_RESET        <= sFeB.DRst;
-  oFE_B0_HOLD        <= not sFeB.Hold;
-  oFE_B0_SHIFT       <= sFeB.ShiftIn;
-  oFE_B0_CLK         <= not sFeB.Clk;
-  oFE_B1_HOLD        <= sFeB.Hold;
-  oFE_B1_SHIFT       <= sFeB.ShiftIn;
-  oFE_B1_CLK         <= sFeB.Clk;
-  oADC_B_CS          <= sAdcB.Cs;
-  oADC_B_SCLK        <= sAdcB.Sclk;
-  sMultiAdc(5).SData <= iADC_B_SDATA0;
-  sMultiAdc(6).SData <= iADC_B_SDATA1;
-  sMultiAdc(7).SData <= iADC_B_SDATA2;
-  sMultiAdc(8).SData <= iADC_B_SDATA3;
-  sMultiAdc(9).SData <= iADC_B_SDATA4;
-
-  oHK <= (others => '0'); --!@todo Add actual signals for debug
+  -- HEF-0
+  oVA_DRESET(0)        <= sFeA.DRst;
+  oVA_HOLDb(0)        <= not sFeA.Hold;
+  oVA_SHIFT_IN(0)       <= sFeA.ShiftIn;
+  oVA_CLKb(0)         <= not sFeA.Clk;
+  oADC_CONV(0)          <= sAdcA.Cs;
+  oADC_SCK(0)        <= sAdcA.Sclk;
+  sMultiAdc(0).SData <= iADC_DATA_1(0);
+  sMultiAdc(1).SData <= iADC_DATA_2(0);
+  sMultiAdc(2).SData <= iADC_DATA_3(0);
+  sMultiAdc(3).SData <= iADC_DATA_4(0);
+  sMultiAdc(4).SData <= iADC_DATA_5(0);
+  sMultiAdc(5).SData <= iADC_DATA_6(0);
+  sMultiAdc(6).SData <= iADC_DATA_7(0);
+  -- FIXME: Implement bias voltage and current readout
+  oIMON_CONV(0) <= '0';
+  oIMON_SCK(0)  <= '0';
+  oVSET_SCL(0)  <= '0';
+  --iIMON_SDO(0);
+  --iVSET_SDA(0);
+  
+  -- HEF-1
+  oVA_DRESET(1)        <= sFeB.DRst;
+  oVA_HOLDb(1)        <= not sFeB.Hold;
+  oVA_SHIFT_IN(1)       <= sFeB.ShiftIn;
+  oVA_CLKb(1)         <= not sFeB.Clk;
+  oADC_CONV(1)          <= sAdcB.Cs;
+  oADC_SCK(1)        <= sAdcB.Sclk;
+  sMultiAdc(7).SData <= iADC_DATA_1(1);
+  sMultiAdc(8).SData <= iADC_DATA_2(1);
+  sMultiAdc(9).SData <= iADC_DATA_3(1);
+  sMultiAdc(10).SData <= iADC_DATA_4(1);
+  sMultiAdc(11).SData <= iADC_DATA_5(1);
+  sMultiAdc(12).SData <= iADC_DATA_6(1);
+  sMultiAdc(13).SData <= iADC_DATA_7(1);
+  -- FIXME: Implement bias voltage and current readout
+  oIMON_CONV(1) <= '0';
+  oIMON_SCK(1)  <= '0';
+  oVSET_SCL(1)  <= '0';
+  --iIMON_SDO(1);
+  --iVSET_SDA(1);
 
   --- I/O synchronization and buffering ----------------------------------------
+  oCTX_GND <= (others => '0');
   BCO_CLK_SYNCH : sync_edge
     generic map (
       pSTAGES => 3
@@ -705,7 +695,7 @@ begin
     port map (
       iCLK    => sClk,
       iRST    => '0',
-      iD      => iBCO_CLK,
+      iD      => iCTX_TIME_CLK,
       oEDGE_R => sBcoClkSynch
       );
 
@@ -716,7 +706,7 @@ begin
     port map (
       iCLK => sClk,
       iRST => '0',
-      iD   => iTRIG_SCL,
+      iD   => iCTX_TRIG_SCL,
       oQ   => sI2cScl
       );
   
@@ -727,7 +717,7 @@ begin
     port map (
       iCLK  => sClk,
       iRST  => '0',
-      iD    => iTRIG_SDA,
+      iD    => iCTX_TRIG_SDA,
       oQ    => sI2cSda
       );
 
@@ -735,8 +725,8 @@ begin
   IOFFD : process(sClk)
   begin
     if rising_edge(sClk) then
-      oBUSY <= sMainBusy;
-      oTRIG <= sMainTrig;
+      oCTX_BUSY <= sMainBusy;
+      oCTX_TRIG <= sMainTrig;
     --!@todo synchronize also the ADC incoming data and the CD and SCLK ret
     end if;
   end process IOFFD;
