@@ -219,7 +219,7 @@ begin
       pDEPTH       => pFDI_DEPTH,
       pUSEDW_WIDTH => ceil_log2(pFDI_DEPTH),
       pAEMPTY_VAL  => 2,
-      pAFULL_VAL   => pFDI_DEPTH-640-3,
+      pAFULL_VAL   => pFDI_DEPTH-906-3,
       pSHOW_AHEAD  => "OFF"
       )
     port map(
@@ -291,7 +291,8 @@ begin
       );
 
   sMetaDataWr <=  sEndFlag when (sI2cTrig = '1') else
-                  iTRIG_SDA;
+  --                iTRIG_SDA;
+                  sTrig;
   MD_WR_ED : edge_detector
     port map(
       iCLK    => iCLK,
