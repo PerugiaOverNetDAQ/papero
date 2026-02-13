@@ -645,19 +645,19 @@ begin
 
   -- GPIO connections ----------------------------------------------------------
   -- HEF-0
-  oVA_DRESET(0)        <= sFeA.DRst;
-  oVA_HOLDb(0)        <= not sFeA.Hold;
-  oVA_SHIFT_IN(0)       <= sFeA.ShiftIn;
-  oVA_CLKb(0)         <= not sFeA.Clk;
-  oADC_CONV(0)          <= sAdcA.Cs;
-  oADC_SCK(0)        <= sAdcA.Sclk;
-  sMultiAdc(0).SData <= iADC_DATA_1(0);
-  sMultiAdc(1).SData <= iADC_DATA_2(0);
-  sMultiAdc(2).SData <= iADC_DATA_3(0);
-  sMultiAdc(3).SData <= iADC_DATA_4(0);
-  sMultiAdc(4).SData <= iADC_DATA_5(0);
-  sMultiAdc(5).SData <= iADC_DATA_6(0);
-  sMultiAdc(6).SData <= iADC_DATA_7(0);
+  oVA_DRESET(0)       <= sFeA.DRst;
+  oVA_HOLDb(0)        <= sFeA.Hold;
+  oVA_SHIFT_IN(0)     <= sFeA.ShiftIn;
+  oVA_CLKb(0)         <= sFeA.Clk;
+  oADC_CONV(0)        <= sAdcA.Cs;
+  oADC_SCK(0)         <= sAdcA.Sclk;
+  sMultiAdc(0).SData  <= iADC_DATA_1(0);
+  sMultiAdc(1).SData  <= iADC_DATA_2(0);
+  sMultiAdc(2).SData  <= iADC_DATA_3(0);
+  sMultiAdc(3).SData  <= iADC_DATA_4(0);
+  sMultiAdc(4).SData  <= iADC_DATA_5(0);
+  sMultiAdc(5).SData  <= iADC_DATA_6(0);
+  sMultiAdc(6).SData  <= iADC_DATA_7(0);
   -- FIXME: Implement bias voltage and current readout
   oIMON_CONV(0) <= '0';
   oIMON_SCK(0)  <= '0';
@@ -666,15 +666,15 @@ begin
   --iVSET_SDA(0);
   
   -- HEF-1
-  oVA_DRESET(1)        <= sFeB.DRst;
-  oVA_HOLDb(1)        <= not sFeB.Hold;
-  oVA_SHIFT_IN(1)       <= sFeB.ShiftIn;
-  oVA_CLKb(1)         <= not sFeB.Clk;
-  oADC_CONV(1)          <= sAdcB.Cs;
-  oADC_SCK(1)        <= sAdcB.Sclk;
-  sMultiAdc(7).SData <= iADC_DATA_1(1);
-  sMultiAdc(8).SData <= iADC_DATA_2(1);
-  sMultiAdc(9).SData <= iADC_DATA_3(1);
+  oVA_DRESET(1)       <= sFeB.DRst;
+  oVA_HOLDb(1)        <= sFeB.Hold;
+  oVA_SHIFT_IN(1)     <= sFeB.ShiftIn;
+  oVA_CLKb(1)         <= sFeB.Clk;
+  oADC_CONV(1)        <= sAdcB.Cs;
+  oADC_SCK(1)         <= sAdcB.Sclk;
+  sMultiAdc(7).SData  <= iADC_DATA_1(1);
+  sMultiAdc(8).SData  <= iADC_DATA_2(1);
+  sMultiAdc(9).SData  <= iADC_DATA_3(1);
   sMultiAdc(10).SData <= iADC_DATA_4(1);
   sMultiAdc(11).SData <= iADC_DATA_5(1);
   sMultiAdc(12).SData <= iADC_DATA_6(1);
