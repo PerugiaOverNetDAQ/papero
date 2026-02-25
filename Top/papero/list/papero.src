@@ -59,7 +59,7 @@ logic/msdintf/basic_functions/clock_divider_2.vhd
 
 #MSD interface files
 logic/msdintf/FE_interface.vhd
-logic/msdintf/multiADC_interface.vhd
+logic/msdintf/multiLTC2313_interface.vhd
 logic/msdintf/multiAdcPlaneInterface.vhd
 #logic/msdintf/Data_Builder.vhd
 #logic/msdintf/Data_Builder_Top.vhd
