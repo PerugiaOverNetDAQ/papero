@@ -140,8 +140,8 @@ entity top_papero is
     iADC_B_SDATA4  : in  std_logic;     --GPIO1-35
     --Central Acquisition side
     iBCO_CLK       : in  std_logic;     --GPIO0-16
-    iTRIG_SCL      : in  std_logic;     --GPIO0-0
-    iTRIG_SDA      : in  std_logic;     --GPIO0-32
+    iBCO_RST       : in  std_logic;     --GPIO0-0
+    iEXT_TRIG      : in  std_logic;     --GPIO0-32
     oBUSY          : out std_logic;     --GPIO0-1
     oTRIG          : out std_logic;     --GPIO0-27
 
@@ -245,8 +245,7 @@ architecture std of top_papero is
 
   signal sMultiAdcSynch : tMultiAdc2FpgaIntf;
   signal sBcoClkSynch   : std_logic;
-  signal sI2cScl        : std_logic;
-  signal sI2cSda        : std_logic;
+  signal sBcoRstSynch   : std_logic;
   signal sBusy          : std_logic;
   signal sErrors        : std_logic;
   signal sDebug         : std_logic_vector(7 downto 0);
@@ -530,7 +529,8 @@ begin
       );
 
   sExtTsEn  <= sBcoClkSynch;
-  sExtTsRst <= sCountersRst or sDetIntfRst or not sRunMode;
+  sExtTsRst <= sBcoRstSynch or sCountersRst
+               or sDetIntfRst or not sRunMode;
   --!@brief External timestamp counter
   extTimestampCounter : counter
     generic map (
@@ -565,9 +565,7 @@ begin
       iINT_TS             => sIntTsCount,
       iEXT_TS             => sExtTsCount,
       --
-      iTRIG_SDA           => sI2cSda,
-      iTRIG_SCL           => sI2cScl,
-      --
+      iEXT_TRIG           => iEXT_TRIG, --FIXME: Synch before the module
       oTRIG               => sMainTrig,
       oBUSY               => sMainBusy,
       iTRG_BUSIES_AND     => sTrgBusiesAnd,
@@ -716,19 +714,8 @@ begin
     port map (
       iCLK => sClk,
       iRST => '0',
-      iD   => iTRIG_SCL,
-      oQ   => sI2cScl
-      );
-  
-  EXT_TRIG_SYNCH : sync_edge
-    generic map (
-      pSTAGES => 3
-      )
-    port map (
-      iCLK  => sClk,
-      iRST  => '0',
-      iD    => iTRIG_SDA,
-      oQ    => sI2cSda
+      iD   => iBCO_RST,
+      oQ   => sBcoRstSynch
       );
 
   sMultiAdcSynch <= sMultiAdc;

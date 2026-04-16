@@ -27,8 +27,7 @@ entity TdaqModule is
     iINT_TS             : in  std_logic_vector(63 downto 0);  --!Internal timestamp
     iEXT_TS             : in  std_logic_vector(63 downto 0);  --!External timestamp
     --Trigger and Busy logic
-    iTRIG_SDA           : in  std_logic;
-    iTRIG_SCL           : in  std_logic;
+    iEXT_TRIG           : in  std_logic;
     oTRIG               : out std_logic;
     oBUSY               : out std_logic;
     iTRG_BUSIES_AND     : in  std_logic_vector(7 downto 0);
@@ -82,7 +81,6 @@ architecture std of TdaqModule is
   signal sFdiFifoUsedW : std_logic_vector(ceil_log2(pFDI_DEPTH)-1 downto 0);
 
   -- Trigger and Busy logic
-  signal sExtTrig           : std_logic;
   signal sTrigEn            : std_logic;
   signal sTrigId            : std_logic_vector(15 downto 0);
   signal sTrigCount         : std_logic_vector(31 downto 0);
@@ -93,14 +91,9 @@ architecture std of TdaqModule is
   signal sBusy              : std_logic;
   signal sTrig              : std_logic;
 
-  -- Tianwei trigger
-  signal sExtTrigMux  : std_logic;
-  signal sI2cTrig     : std_logic;
+  -- Trigger and detector information
   signal sSsId        : std_logic_vector(7 downto 0);
   signal sTrigType    : std_logic_vector(7 downto 0);
-  signal sTrigSerial  : std_logic_vector(31 downto 0);
-  signal sCrcStatus   : std_logic;
-  signal sEndFlag     : std_logic;
 
   -- Test unit
   signal sTestUnitEn    : std_logic;
@@ -123,14 +116,14 @@ begin
   sTestUnitCfg            <= sRegArray(rUNITS_EN)(9 downto 8);
   --
   sTrigCfg                <= sRegArray(rTRIGBUSY_LOGIC);
-  sI2cTrig                <= sRegArray(rTRIGBUSY_LOGIC)(3); --'0': Standard trigger; '1': Tianwei I2C
 
   -- Metadata assignments
   sMetaDataIn.detId   <= sRegArray(rDET_ID)(15 downto 0);
   sMetaDataIn.pktLen  <= sRegArray(rPKT_LEN);
   sMetaDataIn.trigNum <= sTrigCount;
   sMetaDataIn.trigId  <= sTrigId;
-  sMetaDataIn.intTime <= sTrigSerial & sCrcStatus & "0000000" & sSsId & x"00" & sTrigType;
+  sMetaDataIn.intTime <= iINT_TS(31 downto 0) & '1' & "0000000" & sSsId & x"00" & sTrigType;
+  --sMetaDataIn.intTime <= sSsId & sTrigType & iINT_TS(63-16 downto 0); --Line above for compatibility only; is this ok?
   sMetaDataIn.extTime <= iEXT_TS;
 
   --Ports assignments
@@ -238,39 +231,6 @@ begin
       oQ      => sFdiFifoOut.q
       );
 
-  --Used only for trigger rx; busy is generated independently
-  i2c_trig_rx : trigger_rx
-    port map(
-      clk   => iCLK,
-      reset => iRST or (not sTrigEn),-- or not (sI2cTrig),
-      iBusy => sBusy,
-      --
-      busy_clear      => '0', --in, rising edge to reset busy
-      trigger         => sExtTrig, --out, trigger (beginning of I2C transaction)
-      sub_system_id   => sSsId, --out [7:0]
-      trigger_type    => sTrigType, --out [7:0]
-      trigger_serial  => sTrigSerial, --out [31:0]
-      crc_status      => sCrcStatus, --out, if '1' crc ok
-      end_flag        => sEndFlag, --out, end of I2C transaction
-      --
-      ro_sda  => iTRIG_SDA, --in, I2C SDA
-      ren_sda => open,
-      de_sda  => open,
-      di_sda  => open,
-      --
-      ro_scl  => iTRIG_SCL, --in, I2C SCL
-      ren_scl => open,
-      de_scl  => open,
-      di_scl  => open,
-      --
-      ro_busy   => '0',
-      ren_busy  => open,
-      de_busy   => open,
-      di_busy   => open --out, busy
-    );
-
-  sExtTrigMux <=  sExtTrig when (sI2cTrig = '1') else
-                  iTRIG_SDA;
   --!@brief Trigger and busy logic
   Trig_Busy : trigBusyLogic
     port map (
@@ -278,7 +238,7 @@ begin
       iRST            => iRST or not sTrigEn,
       iRST_COUNTERS   => iRST_COUNT,
       iCFG            => sTrigCfg,
-      iEXT_TRIG       => sExtTrigMux,
+      iEXT_TRIG       => iEXT_TRIG,
       iBUSIES_AND     => iTRG_BUSIES_AND,
       iBUSIES_OR      => iTRG_BUSIES_OR,
       oTRIG           => sTrig,
@@ -290,8 +250,7 @@ begin
       oBUSY           => sBusy
       );
 
-  sMetaDataWr <=  sEndFlag when (sI2cTrig = '1') else
-                  iTRIG_SDA;
+  sMetaDataWr <=  iEXT_TRIG; --FIXME: wait for some time before writing the metadata, to be sure that the trigger information is correct
   MD_WR_ED : edge_detector
     port map(
       iCLK    => iCLK,
