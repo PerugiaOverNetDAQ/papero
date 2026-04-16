@@ -1,5 +1,12 @@
 --!@file top_papero.vhd
---!brief Top module of the papero FPGA gateware
+--!brief Top module of the papero FPGA gateware.
+--!@details
+--!
+--!Instantiates HPS, TDAQ module, and ancillary electronics.
+--!To add a detector readout:
+--! - Connect the detector interface to the fast interface of the TDAQ module
+--!  - Add the needed pin to the ports and the papero_pins.qsf file.
+--!
 --!@todo Add reset to the HPS-FPGA fifos
 --!@author Matteo D'Antonio, matteo.dantonio@studenti.unipg.it
 --!@author Mattia Barbanera, mattia.barbanera@infn.it
@@ -167,9 +174,9 @@ architecture std of top_papero is
   signal sRegAddrInt, sRegAddrSyn : std_logic_vector(31 downto 0);
   signal sRegContentInt, sRegContentSyn : std_logic_vector(31 downto 0);
 
-  -- Ausiliari
-  signal fpga_debounced_buttons_n : std_logic_vector(1 downto 0);  -- debounced_bottons in logica positiva
-  signal hps_fpga_reset_n_synch   : std_logic;  -- segnale interno di RESET in logica positiva
+  -- Auxiliaries
+  signal fpga_debounced_buttons_n : std_logic_vector(1 downto 0);  -- debounced_bottons (positive logic)
+  signal hps_fpga_reset_n_synch   : std_logic;  -- Reset (positive logic)
   signal hps_cold_rst_n           : std_logic;
   signal hps_warm_rst_n           : std_logic;
   signal hps_debug_rst_n          : std_logic;
@@ -177,7 +184,7 @@ architecture std of top_papero is
   signal h2f_clk_50MHz            : std_logic;  -- user clock (50 MHz) from HPS
   signal h2f_clk_96MHz            : std_logic;  -- user clock (96 MHz) from HPS
 
-  -- fifo FPGA --> HPS contenente dati scientifici
+  -- Scientific data fifo FPGA --> HPS
   signal fast_fifo_f2h_data_in      : std_logic_vector(31 downto 0);  -- Data
   signal fast_fifo_f2h_wr_en        : std_logic;  -- Write Enable
   signal fast_fifo_f2h_full         : std_logic;  -- Fifo Full
@@ -188,7 +195,7 @@ architecture std of top_papero is
   signal fast_fifo_f2h_wr_en_csr    : std_logic;
   signal fast_fifo_f2h_data_out_csr : std_logic_vector(31 downto 0);
 
-  -- fifo FPGA --> HPS contenente dati di telemetria
+  -- Telemetry fifo FPGA --> HPS
   signal fifo_f2h_data_in      : std_logic_vector(31 downto 0);  -- Data
   signal fifo_f2h_wr_en        : std_logic;  -- Write Enable
   signal fifo_f2h_full         : std_logic;  -- Fifo Full
@@ -199,7 +206,7 @@ architecture std of top_papero is
   signal fifo_f2h_wr_en_csr    : std_logic;
   signal fifo_f2h_data_out_csr : std_logic_vector(31 downto 0);
 
-  -- fifo HPS --> FPGA contenente dati di configurazione
+  -- Configuration fifo HPS --> FPGA 
   signal fifo_h2f_data_out     : std_logic_vector(31 downto 0);  -- Data
   signal fifo_h2f_rd_en        : std_logic;                      -- Read Enable
   signal fifo_h2f_empty        : std_logic;                      -- Fifo Empty
@@ -259,7 +266,7 @@ begin
   
   LED <= (others => '0');
 
-  fpga_debounced_buttons_n <= not fpga_debounced_buttons;  -- I bottoni dell'FPGA lavorano in logica negata, i nostri moduli in logica positiva
+  fpga_debounced_buttons_n <= not fpga_debounced_buttons;  --FPGA buttons work in negated logic, opposite to the internal modules
 
   hps_cold_rst_n  <= not hps_cold_reset;
   hps_warm_rst_n  <= not hps_warm_reset;
