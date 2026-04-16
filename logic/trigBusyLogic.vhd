@@ -38,7 +38,6 @@ end entity trigBusyLogic;
 --!@todo sTotTrigNum computed with a synchronous process
 --!@copydoc trigBusyLogic.vhd
 architecture std of trigBusyLogic is
-  signal sExtTrigSynch : std_logic;
 
   signal sIntTrig       : std_logic;
   signal sIntTrigEn     : std_logic;
@@ -69,8 +68,8 @@ begin
   sIntTrigPeriod <= iCFG(iCFG'left downto 4) & "0000";
 
   sTrig <= sMainTrigInt when sIntTrigEn = '1' else sMainTrigExt;
-  sTrigWhenBusy <= (sExtTrigSynch or sIntTrig) and sBusy;
-  sMainTrigExt <= sExtTrigSynch and not sBusy;
+  sTrigWhenBusy <= (iEXT_TRIG or sIntTrig) and sBusy;
+  sMainTrigExt <= iEXT_TRIG and not sBusy;
   sMainTrigInt <= sIntTrig and not sBusy;
 
   sTotTrigNum <= ('0' & sExtTrigNum) + ('0' & sIntTrigNum);
@@ -85,18 +84,6 @@ begin
 
   sBusy <= unary_and(iBUSIES_AND) or unary_or(iBUSIES_OR) or iRST;
   -----------------------------------------------------------------------------
-
-  --!@brief Synch the trigger to the local clock domain and take the rising edge
-  EXT_TRIG_RE : sync_edge
-    generic map (
-      pSTAGES => 3
-      )
-    port map (
-      iCLK    => iCLK,
-      iRST    => iRST,
-      iD      => iEXT_TRIG,
-      oEDGE_R => sExtTrigSynch
-      );
 
   --!@brief Internal trigger counter
   --!@param[in] iCLK  Clock, used on rising edge

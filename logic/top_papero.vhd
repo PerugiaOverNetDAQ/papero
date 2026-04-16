@@ -210,7 +210,7 @@ architecture std of top_papero is
   signal fifo_h2f_data_out_csr : std_logic_vector(31 downto 0);
 
   -- TDAQ Module
-  signal sExtTrig      : std_logic;
+  signal sExtTrigSynch : std_logic;
   signal sMainTrig     : std_logic;
   signal sMainBusy     : std_logic;
   signal sTrgBusiesAnd : std_logic_vector(7 downto 0);
@@ -245,6 +245,7 @@ architecture std of top_papero is
 
   signal sMultiAdcSynch : tMultiAdc2FpgaIntf;
   signal sBcoClkSynch   : std_logic;
+  signal sBcoRstReplica : std_logic;
   signal sBcoRstSynch   : std_logic;
   signal sBusy          : std_logic;
   signal sErrors        : std_logic;
@@ -565,7 +566,7 @@ begin
       iINT_TS             => sIntTsCount,
       iEXT_TS             => sExtTsCount,
       --
-      iEXT_TRIG           => iEXT_TRIG, --FIXME: Synch before the module
+      iEXT_TRIG           => sExtTrigSynch,
       oTRIG               => sMainTrig,
       oBUSY               => sMainBusy,
       iTRG_BUSIES_AND     => sTrgBusiesAnd,
@@ -712,10 +713,22 @@ begin
       pSTAGES => 3
       )
     port map (
-      iCLK => sClk,
-      iRST => '0',
-      iD   => iBCO_RST,
-      oQ   => sBcoRstSynch
+      iCLK    => sClk,
+      iRST    => '0',
+      iD      => iBCO_RST,
+      oQ      => sBcoRstReplica,
+      oEDGE_R => sBcoRstSynch
+      );
+
+  EXT_TRIG_RE : sync_edge
+    generic map (
+      pSTAGES => 3
+      )
+    port map (
+      iCLK    => iCLK,
+      iRST    => '0',
+      iD      => iEXT_TRIG,
+      oEDGE_R => sExtTrigSynch
       );
 
   sMultiAdcSynch <= sMultiAdc;
