@@ -56,7 +56,6 @@ package paperoPackage is
   constant rERLANG_THRSH   : natural := 12;
   constant rERLANG_INTBUSY : natural := 13;
   constant rERLANG_DUTY    : natural := 14;
-  constant rERLANG_FREQDIV : natural := 15;
   
   --!Register array HPS-RW, FPGA-R
   type tHpsRegArray is array (0 to cHPS_REGISTERS-1) of
@@ -64,8 +63,8 @@ package paperoPackage is
   constant cHPS_REG_NULL : tHpsRegArray := (
     x"00000000", x"00000001", x"02faf080", x"000000FF",
     x"0000028A", cFE_CLK_DUTY & cFE_CLK_DIV, cADC_CLK_DUTY & cADC_CLK_DIV , cCFG_PLANE & cTRG2HOLD,
-    cBUSY_LEN & cADC_DELAY, x"00010003", x"00000032", x"00000019",
-    x"80000000", x"00000001", x"00000032", x"02faf080"
+    cBUSY_LEN & cADC_DELAY, x"00000000", x"00000032", x"00000019",
+    x"80000000", x"00000001", x"00000032", x"00000000"
     );                                  --!Null vector for HPS register array
 
   constant rGW_VER           : natural := 0;

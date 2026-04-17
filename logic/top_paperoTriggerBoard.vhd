@@ -196,7 +196,7 @@ architecture std of top_paperoTriggerBoard is
   signal sTrig         : std_logic;
   signal sGateTrig     : std_logic;
   signal sMainTrig     : std_logic;
-  signal sInSpill_b      : std_logic;
+  signal sInSpill_b    : std_logic;
   
   --Random Trigger Generator
   signal sErlangConfig  : tErlangConfig;
@@ -217,6 +217,7 @@ architecture std of top_paperoTriggerBoard is
 
   -- Timestamp
   signal sTsClk       : std_logic;
+  signal sTsClkBuf    : std_logic;
   signal sTsRst       : std_logic;
   signal sTsFreqDiv   : std_logic_vector(31 downto 0);
   signal sTsDutyCycle : std_logic_vector(31 downto 0);
@@ -568,19 +569,20 @@ begin
   sTsFreqDiv    <= sRegArray(rTRGBRD_FREQDIV);
   sTsDutyCycle  <= sRegArray(rTRGBRD_DUTY);
   sIntTrigEn    <= not sRegArray(rTRIGBUSY_LOGIC)(0);
-  sCal          <= sRegArray(rTRIGBUSY_LOGIC)(1);
+  sCal          <= sIntTrigEn;
   
   --Random trigger generator assignments
-  sErlangConfig.en          <= sRegArray(rTRGBRD_CFG)(16);
-  sErlangConfig.erlangTrig  <= sRegArray(rTRGBRD_CFG)(17);
+  sErlangConfig.en          <= '1';
+  sErlangConfig.erlangTrig  <= '0';
   sErlangConfig.thrshLevel  <= sRegArray(rERLANG_THRSH);
   sErlangConfig.intBusy     <= sRegArray(rERLANG_INTBUSY);
   sErlangConfig.pulseWidth  <= sRegArray(rERLANG_DUTY);
-  sErlangConfig.freqDiv     <= sRegArray(rERLANG_FREQDIV);
+  sErlangConfig.freqDiv     <= sRegArray(rTRIGBUSY_LOGIC)(31 downto 4) & "0000";
 
   -- GPIO connections ----------------------------------------------------------
-  oHK           <= (others => '0');
-  oMUX_SEL      <= sRegArray(rTRGBRD_CFG)(2);
+  oHK(34 downto 0) <= (others => '0');
+  oHK(35)       <= sTsClkBuf;
+  oMUX_SEL      <= sIntTrigEn;
   oI2C_SDA      <= '0';
   oI2C_SCL      <= '0';
   oGPIO_1       <= (others => '0');
@@ -702,6 +704,7 @@ begin
       oTS_CLK    <= sTsClk;
       oTS_RST    <= sCountersRst or sDetIntfRst or not sRunMode;
       oTRIG_FPGA <= sMainTrig;
+      sTsClkBuf  <= sTsClk;
     end if;
   end process O_FFD;
 
