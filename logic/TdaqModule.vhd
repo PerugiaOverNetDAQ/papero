@@ -122,6 +122,8 @@ begin
   sMetaDataIn.pktLen  <= sRegArray(rPKT_LEN);
   sMetaDataIn.trigNum <= sTrigCount;
   sMetaDataIn.trigId  <= sTrigId;
+  sSsId <= (others=>'0');
+  sTrigType <= (others=>'0');
   sMetaDataIn.intTime <= iINT_TS(31 downto 0) & '1' & "0000000" & sSsId & x"00" & sTrigType;
   --sMetaDataIn.intTime <= sSsId & sTrigType & iINT_TS(63-16 downto 0); --Line above for compatibility only; is this ok?
   sMetaDataIn.extTime <= iEXT_TS;

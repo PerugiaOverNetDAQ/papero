@@ -732,7 +732,7 @@ begin
       pSTAGES => 3
       )
     port map (
-      iCLK    => iCLK,
+      iCLK    => sClk,
       iRST    => '0',
       iD      => iEXT_TRIG,
       oEDGE_R => sExtTrigSynch
