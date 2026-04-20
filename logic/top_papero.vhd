@@ -104,7 +104,7 @@ entity top_papero is
     oIMON_CONV  : out std_logic_vector(1 downto 0);
     oIMON_SCK : out std_logic_vector(1 downto 0);
     iIMON_SDO : in  std_logic_vector(1 downto 0);
-    iVSET_SDA : in  std_logic_vector(1 downto 0);
+    ioVSET_SDA : inout  std_logic_vector(1 downto 0);
     oVSET_SCL : out std_logic_vector(1 downto 0);
     iADC_DATA_1 : in  std_logic_vector(1 downto 0);
     iADC_DATA_2 : in  std_logic_vector(1 downto 0);
@@ -207,6 +207,14 @@ architecture std of top_papero is
   signal sExtTsEn    : std_logic;
   signal sExtTsRst   : std_logic;
   signal sExtTsCount : std_logic_vector(63 downto 0);
+
+  -- HV DACs and ADCs
+  signal sHvRqt : std_logic_vector(1 downto 0);
+  signal sHvAck : std_logic_vector(1 downto 0);
+  signal sHvErr : std_logic_vector(1 downto 0);
+  signal sHvMon : std_logic_vector(cREG_WIDTH-1 downto 0);
+  signal sHvValue0 : std_logic_vector(9 downto 0);
+  signal sHvValue1 : std_logic_vector(9 downto 0);
 
   --Detector interface
   signal sDetIntfRst    : std_logic;
@@ -547,6 +555,7 @@ begin
       oREG_ARRAY          => sRegArray,
       iINT_TS             => sIntTsCount,
       iEXT_TS             => sExtTsCount,
+      iHV_MON             => sHvMon,
       --
       iTRIG_SDA           => sI2cSda,
       iTRIG_SCL           => sI2cScl,
@@ -642,6 +651,39 @@ begin
       oFASTDATA_WE    => sDetIntfWe,
       iFASTDATA_AFULL => sDetIntfAfull
       );
+  
+  sHvRqt(1) <= sRegArray(rHV_PARAM)(31) or fpga_debounced_buttons_n(0); --@todo Remove the override with the button, it's just for testing purposes
+  sHvValue1 <= sRegArray(rHV_PARAM)(25 downto 16);
+  sHvMon(31) <= sHvAck(1);
+  sHvMon(30) <= sHvErr(1);
+  HV_1_DAC : LT1663Intf
+    port map(
+      iCLK  => sClk,
+      iRST  => sDetIntfRst,
+      iRQT  => sHvRqt(1),
+      oACK  => sHvAck(1),
+      oERR  => sHvErr(1),
+      iHV   => sHvValue1,
+      ioSDA => ioVSET_SDA(1),
+      oSCL  => oVSET_SCL(1)
+    );
+  
+  sHvRqt(0) <= sRegArray(rHV_PARAM)(15) or fpga_debounced_buttons_n(0); --@todo Remove the override with the button, it's just for testing purposes;
+  sHvValue0 <= sRegArray(rHV_PARAM)(9 downto 0);
+  sHvMon(15) <= sHvAck(0);
+  sHvMon(14) <= sHvErr(0);
+  HV_0_DAC : LT1663Intf
+    port map(
+      iCLK  => sClk,
+      iRST  => sDetIntfRst,
+      iRQT  => sHvRqt(0),
+      oACK  => sHvAck(0),
+      oERR  => sHvErr(0),
+      iHV   => sHvValue0,
+      ioSDA => ioVSET_SDA(0),
+      oSCL  => oVSET_SCL(0)
+    );
+  
 
   -- GPIO connections ----------------------------------------------------------
   -- HEF-0
@@ -658,12 +700,10 @@ begin
   sMultiAdc(4).SData  <= iADC_DATA_5(0);
   sMultiAdc(5).SData  <= iADC_DATA_6(0);
   sMultiAdc(6).SData  <= iADC_DATA_7(0);
-  -- FIXME: Implement bias voltage and current readout
+  --@todo Implement HV current readout
   oIMON_CONV(0) <= '0';
   oIMON_SCK(0)  <= '0';
-  oVSET_SCL(0)  <= '0';
   --iIMON_SDO(0);
-  --iVSET_SDA(0);
   
   -- HEF-1
   oVA_DRESET(1)       <= sFeB.DRst;
@@ -679,12 +719,10 @@ begin
   sMultiAdc(11).SData <= iADC_DATA_5(1);
   sMultiAdc(12).SData <= iADC_DATA_6(1);
   sMultiAdc(13).SData <= iADC_DATA_7(1);
-  -- FIXME: Implement bias voltage and current readout
+  --@todo Implement HV current readout
   oIMON_CONV(1) <= '0';
   oIMON_SCK(1)  <= '0';
-  oVSET_SCL(1)  <= '0';
   --iIMON_SDO(1);
-  --iVSET_SDA(1);
 
   --- I/O synchronization and buffering ----------------------------------------
   oCTX_GND <= (others => '0');

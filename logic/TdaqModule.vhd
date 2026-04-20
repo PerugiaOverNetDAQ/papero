@@ -26,6 +26,7 @@ entity TdaqModule is
     oREG_ARRAY          : out tRegArray;  --!Complete Registers array
     iINT_TS             : in  std_logic_vector(63 downto 0);  --!Internal timestamp
     iEXT_TS             : in  std_logic_vector(63 downto 0);  --!External timestamp
+    iHV_MON             : in std_logic_vector(31 downto 0);   --!HV current monitor (for both HEF)
     --Trigger and Busy logic
     iTRIG_SDA           : in  std_logic;
     iTRIG_SCL           : in  std_logic;

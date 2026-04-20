@@ -50,13 +50,14 @@ package paperoPackage is
   constant rADC_CLK_PARAM  : natural := 6;
   constant rMSD_PARAM      : natural := 7;
   constant rBUSYADC_PARAM  : natural := 8;
+  constant rHV_PARAM       : natural := 9;
   --!Register array HPS-RW, FPGA-R
   type tHpsRegArray is array (0 to cHPS_REGISTERS-1) of
     std_logic_vector(cREG_WIDTH-1 downto 0);
   constant cHPS_REG_NULL : tHpsRegArray := (
     x"00000000", x"00000001", x"02faf080", x"000000FF",
     x"0000028A", cFE_CLK_DUTY & cFE_CLK_DIV, cADC_CLK_DUTY & cADC_CLK_DIV , cCFG_PLANE & cTRG2HOLD,
-    cBUSY_LEN & cADC_DELAY, x"00000000", x"00000000", x"00000000",
+    cBUSY_LEN & cADC_DELAY, x"02660266", x"00000000", x"00000000",
     x"00000000", x"00000000", x"00000000", x"00000000"
     );                                  --!Null vector for HPS register array
 
@@ -70,6 +71,7 @@ package paperoPackage is
   constant rEXT_TRG_COUNT    : natural := 7;
   constant rINT_TRG_COUNT    : natural := 8;
   constant rFDI_FIFO_NUMWORD : natural := 9;
+  constant rHV_CURR_MON      : natural := 10;
   constant rPIUMONE          : natural := 15;
   --!Register array HPS-R, FPGA-RW
   type tFpgaRegArray is array (0 to cFPGA_REGISTERS-1) of
@@ -440,6 +442,7 @@ package paperoPackage is
       oREG_ARRAY          : out tRegArray;
       iINT_TS             : in  std_logic_vector(63 downto 0);
       iEXT_TS             : in  std_logic_vector(63 downto 0);
+      iHV_MON             : in std_logic_vector(31 downto 0);
       --# {{TrigBusy|TrigBusy}}
       iTRIG_SDA           : in  std_logic;
       iTRIG_SCL           : in  std_logic;
@@ -587,6 +590,23 @@ package paperoPackage is
       ren_busy  : out std_logic;
       de_busy   : out std_logic;
       di_busy   : out std_logic
+    );
+  end component;
+
+  --!@copydoc LT1663Intf.vhd
+  component LT1663Intf is
+    port (
+      iCLK  : in    std_logic;
+      iRST  : in    std_logic;
+      --# {{Control|Control}}
+      iRQT  : in    std_logic;
+      oACK  : out   std_logic;
+      oERR  : out   std_logic;
+      --# {{HV Settings|HV Setting}}
+      iHV   : in    std_logic_vector(9 downto 0);
+      --# {{2-Wire Interface|2-Wire Interface}}
+      ioSDA : inout std_logic;
+      oSCL  : out   std_logic
     );
   end component;
 

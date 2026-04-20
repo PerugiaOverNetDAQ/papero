@@ -20,6 +20,7 @@ logic/TdaqModule.vhd
 logic/DetectorInterface.vhd
 logic/priorityEncoder.vhd
 logic/metaDataFifo.vhd
+logic/LT1663Intf.vhd
 
 #I2C Trigger Tianwei
 logic/i2c_trig/crc16_generator.vhd
