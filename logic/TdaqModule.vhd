@@ -252,7 +252,7 @@ begin
       oBUSY           => sBusy
       );
 
-  sMetaDataWr <=  iEXT_TRIG; --FIXME: wait for some time before writing the metadata, to be sure that the trigger information is correct
+  sMetaDataWr <=  sTrig; --FIXME: wait for some time before writing the metadata, to be sure that the trigger information is correct
   MD_WR_ED : edge_detector
     port map(
       iCLK    => iCLK,
