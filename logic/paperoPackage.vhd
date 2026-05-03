@@ -6,6 +6,7 @@
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
+use ieee.math_real.all;
 use ieee.std_logic_unsigned.all;
 
 use work.basic_package.all;
@@ -40,6 +41,13 @@ package paperoPackage is
   constant cTRG_CALIB_INT : std_logic_vector(15 downto 0) := x"0004";  --!Calibration trigger (internal)
   constant cTRG_CALIB_EXT : std_logic_vector(15 downto 0) := x"0008";  --!Calibration trigger (external)
 
+  --Bias current monitoring
+  constant cLTC2312_DEPTH : natural := 12;
+  constant cLTC2312_ADCS  : natural := 2;
+  constant cLTC2312_CLK_FREQ      : natural := 20;
+  constant cLTC3213_CONV_TIME     : natural := 1400; --!Conversion time of the LTC2312 in ns
+  constant cLTC3213_CONV_CLK      : natural := natural(ceil(real(cLTC3213_CONV_TIME/cLTC2312_CLK_FREQ)))+1; --!Conversion time of the LTC2312 in ns
+
   -- Types ---------------------------------------------------------------------
   constant rGOTO_STATE     : natural := 0;
   constant rUNITS_EN       : natural := 1;
@@ -57,7 +65,7 @@ package paperoPackage is
   constant cHPS_REG_NULL : tHpsRegArray := (
     x"00000000", x"00000001", x"02faf080", x"000000FF",
     x"0000028A", cFE_CLK_DUTY & cFE_CLK_DIV, cADC_CLK_DUTY & cADC_CLK_DIV , cCFG_PLANE & cTRG2HOLD,
-    cBUSY_LEN & cADC_DELAY, x"02660266", x"00000000", x"00000000",
+    cBUSY_LEN & cADC_DELAY, x"01330133", x"00000000", x"00000000",
     x"00000000", x"00000000", x"00000000", x"00000000"
     );                                  --!Null vector for HPS register array
 
@@ -163,6 +171,10 @@ package paperoPackage is
     intTime : std_logic_vector(63 downto 0);  --!Internal Timestamp
     extTime : std_logic_vector(63 downto 0);  --!External Timestamp
   end record tF2hMetadata;
+
+  --!Bias monitorin LTC2312 output port
+  type tLtc2312OutPort is array (0 to cLTC2312_ADCS-1) of
+  std_logic_vector(cLTC2312_DEPTH-1 downto 0);
 
   -- Components ----------------------------------------------------------------
   --!Detects rising and falling edges of the input
@@ -607,6 +619,30 @@ package paperoPackage is
       --# {{2-Wire Interface|2-Wire Interface}}
       ioSDA : inout std_logic;
       oSCL  : out   std_logic
+    );
+  end component;
+
+  --!@copydoc biasCurrLTC2312.vhd
+  component biasCurrLTC2312 is
+    generic (
+      pDEPTH  : integer;
+      pADCS   : integer
+    );
+    port (
+      iCLK  : in  std_logic;
+      iRST  : in  std_logic;
+      --# {{Control|Control}}
+      oBUSY : out std_logic;
+      oCOMPL : out std_logic;
+      iEN   : in  std_logic;
+      iSTART : in  std_logic;
+      --# {{SPI Interface|SPI Interface}}
+      oCONV : out std_logic;
+      oSCK  : out std_logic;
+      iSDO  : in  std_logic_vector(pADCS-1 downto 0);
+      --# {{Converted data|Converted data}}
+      oQ_CONV : out tLtc2312OutPort;
+      oWR     : out std_logic
     );
   end component;
 

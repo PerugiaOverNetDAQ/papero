@@ -216,6 +216,13 @@ architecture std of top_papero is
   signal sHvValue0 : std_logic_vector(9 downto 0);
   signal sHvValue1 : std_logic_vector(9 downto 0);
 
+  signal sBiasCurrentStart  : std_logic;
+  signal sBiasCurrentConv   : std_logic;
+  signal sBiasCurrentSck    : std_logic;
+  signal sBiasCurrentSdo    : std_logic_vector(cLTC2312_ADCS-1 downto 0);
+  signal sBiasCurrent       : tLtc2312OutPort;
+  signal sBiasCurrWr        : std_logic;
+
   --Detector interface
   signal sDetIntfRst    : std_logic;
   signal sDetIntfEn     : std_logic;
@@ -684,6 +691,40 @@ begin
       oSCL  => oVSET_SCL(0)
     );
   
+  sHvMon(27 downto 16) <= sBiasCurrent(1);
+  sHvMon(11 downto 0) <= sBiasCurrent(0);
+  biasCurrentMonitor : biasCurrLTC2312
+   generic map(
+      pDEPTH => cLTC2312_DEPTH,
+      pADCS => cLTC2312_ADCS
+  )
+   port map(
+      iCLK => sClk,
+      iRST => sDetIntfRst,
+      oBUSY => sHvMon(29),
+      oCOMPL => sHvMon(28),
+      iEN => sRegArray(rHV_PARAM)(30),
+      iSTART => sBiasCurrentStart,
+      oCONV => sBiasCurrentConv,
+      oSCK => sBiasCurrentSck,
+      iSDO => sBiasCurrentSdo,
+      oQ_CONV => sBiasCurrent,
+      oWR => sBiasCurrWr
+  );
+
+  biasCurrentStarter : clock_divider_2
+   generic map(
+      pPOLARITY => '1',
+      pWIDTH => 32
+  )
+   port map(
+      iCLK => sClk,
+      iRST => sDetIntfRst,
+      iEN => sRegArray(rHV_PARAM)(30),
+      oCLK_OUT_RISING => sBiasCurrentStart,
+      iFREQ_DIV => x"02faf080", --2faf080: 1sec@50MHz
+      iDUTY_CYCLE => x"017d7840" --17d7840: 50%@50MHz
+  );
 
   -- GPIO connections ----------------------------------------------------------
   -- HEF-0
@@ -700,10 +741,9 @@ begin
   sMultiAdc(4).SData  <= iADC_DATA_5(0);
   sMultiAdc(5).SData  <= iADC_DATA_6(0);
   sMultiAdc(6).SData  <= iADC_DATA_7(0);
-  --@todo Implement HV current readout
-  oIMON_CONV(0) <= '0';
-  oIMON_SCK(0)  <= '0';
-  --iIMON_SDO(0);
+  oIMON_CONV(0) <= sBiasCurrentConv;
+  oIMON_SCK(0)  <= sBiasCurrentSck;
+  sBiasCurrentSdo(0) <= iIMON_SDO(0);
   
   -- HEF-1
   oVA_DRESET(1)       <= sFeB.DRst;
@@ -719,10 +759,9 @@ begin
   sMultiAdc(11).SData <= iADC_DATA_5(1);
   sMultiAdc(12).SData <= iADC_DATA_6(1);
   sMultiAdc(13).SData <= iADC_DATA_7(1);
-  --@todo Implement HV current readout
-  oIMON_CONV(1) <= '0';
-  oIMON_SCK(1)  <= '0';
-  --iIMON_SDO(1);
+  oIMON_CONV(1) <= sBiasCurrentConv;
+  oIMON_SCK(1)  <= sBiasCurrentSck;
+  sBiasCurrentSdo(1) <= iIMON_SDO(1);
 
   --- I/O synchronization and buffering ----------------------------------------
   oCTX_GND <= (others => '0');
