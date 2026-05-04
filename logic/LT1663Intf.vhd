@@ -4,9 +4,13 @@
 
 library ieee;
 use ieee.std_logic_1164.all;
---use ieee.std_logic_unsigned.all;
+use ieee.std_logic_unsigned.all;
 use ieee.numeric_std.all;
---use ieee.std_logic_arith.all;
+use ieee.std_logic_arith.all;
+
+use work.basic_package.all;
+use work.paperoPackage.all;
+
 
 --!@copydoc LT1663Intf.vhd
 entity LT1663Intf is port (
@@ -29,12 +33,14 @@ architecture LT1663_arch of LT1663Intf is
 
   type t1663State is (IDLE, START, SHIFT, ACK, STOP);
   signal s1663State : t1663State;         --FSM Current state
+  
+  constant cSCL_PERIOD : integer := 500; --SCL period in clock cycles
 
   -- Signals for data shifting, clock division, counters, and acknowledgment
   signal sSro  : std_logic_vector(7 downto 0);  --Data shift register
-  signal sPDiv : integer range 0 to 4;  --Clock divider for timing
-  signal sCnt  : integer range 0 to 7;  --Bit counter for 8-bit data
-  signal sBCnt : integer range 0 to 3;  --Byte counter for multi-byte transfers
+  signal sPDiv : std_logic_vector(8 downto 0);  --Clock divider for timing
+  signal sCnt  : std_logic_vector(2 downto 0);  --Bit counter for 8-bit data
+  signal sBCnt : std_logic_vector(1 downto 0);  --Byte counter for multi-byte transfers
 
   signal sCommAck : std_logic;
 
@@ -66,8 +72,8 @@ begin
   --  2: BG Band-Gap reference: '0' power supply, '1' internal
   --  1: SD Power Down: '0' OFF, '1' ON
   --  0: SY Update on '0' Stop condition, '1' Ack
-  sSroMux <= "00000100" when sBCnt = 0 else
-             iHV(7 downto 0) when sBCnt = 1 else
+  sSroMux <= "00000100" when sBCnt = int2slv(0, sBCnt'length) else
+             iHV(7 downto 0) when sBCnt = int2slv(1, sBCnt'length) else
              "000000" & iHV(9 downto 8);
 
   oACK <= '1' when s1663State = STOP else '0';
@@ -78,12 +84,12 @@ begin
   LT1663_INTF_PROC : process (iCLK, iRST)
   begin
     if iRST = '1' then
-      sPDiv     <= 0;
+      sPDiv     <= (others => '0');
       sRqtS <= '0';
       sDa   <= '1';
       sCl   <= '1';
-      sCnt  <= 0;
-      sBCnt <= 0;
+      sCnt  <= (others => '0');
+      sBCnt <= (others => '0');
       sRqt2 <= '0';
       sSro    <= (others => '0');
       sCommAck <= '0';
@@ -103,33 +109,34 @@ begin
       end if;
 
       -- 
-      sPDiv <= sPDiv + 1;
-      if sPDiv = 4 then
-        sPDiv <= 0;
+      sPDiv <= sPDiv + int2slv(1, sPDiv'length);
+      if sPDiv = int2slv(cSCL_PERIOD, sPDiv'length) then --4
+        sPDiv <= (others => '0');
       end if;
 
       -- Clock line control, based on state and clock divider
-      if sPDiv = 1 then
+      if sPDiv = int2slv(1, sPDiv'length) then
         sCl <= '1';
       end if;
-      if (s1663State = START or s1663State = SHIFT or s1663State = ACK) and sPDiv = 3 then
+      if (s1663State = START or s1663State = SHIFT or s1663State = ACK) and sPDiv = int2slv(cSCL_PERIOD/2, sPDiv'length) then --3
         sCl <= '0';
       end if;
 
       -- Data line control, based on clock divider and state
-      if sPDiv = 2 then
+      if sPDiv = int2slv(1, sPDiv'length) then  --2
         --Start condition
         if s1663State = START then
           sDa <= '0';
         end if;
+      elsif sPDiv = int2slv((cSCL_PERIOD/2)+1, sPDiv'length) then
         --Stop condition
-        if s1663State = STOP then
+        if s1663State = IDLE then
           sDa <= '1';
         end if;
       end if;
 
       --
-      if sPDiv = 4 then
+      if sPDiv = int2slv(400, sPDiv'length) then --4
         if s1663State = STOP then
           sDa <= '0';
         end if;
@@ -142,33 +149,33 @@ begin
       end if;
 
       -- Shift register handling and acknowledgment processing
-      if sPDiv = 3 then
+      if sPDiv = int2slv(cSCL_PERIOD/2, sPDiv'length) then --3
         -- Start condition: load the shift register with the 2-wire address
         if s1663State = START then
           sSro <= "01000000"; --[7:1] Default address; [0] Write. 0x40
         end if;
         -- Shift data bits out on the SDA line
         if s1663State = SHIFT then
-          sCnt <= sCnt + 1;
+          sCnt <= sCnt + int2slv(1, sCnt'length);
           sSro <= sSro(6 downto 0) & '1';
         end if;
         -- Handle acknowledgment from the slave device
         if s1663State = ACK then
           sCommAck <= ioSDA;
-          sBCnt   <= sBCnt + 1;
+          sBCnt   <= sBCnt + int2slv(1, sBCnt'length);
           sSro    <= sSroMux;
         end if;
         -- Reset control signals and counters when returning to IDLE state
         if s1663State = IDLE then
           sDa   <= '1';
           sCl   <= '1';
-          sCnt  <= 0;
-          sBCnt <= 0;
+          sCnt  <= (others => '0');
+          sBCnt <= (others => '0');
         end if;
       end if;
 
       -- State transitions
-      if sPDiv = 3 then
+      if sPDiv = int2slv(cSCL_PERIOD/2, sPDiv'length) then
         case s1663State is
           when IDLE =>
             if sRqtS = '1' then
@@ -177,12 +184,12 @@ begin
           when START =>
             s1663State <= SHIFT;
           when SHIFT =>
-            if sCnt = 7 then -- 8-bit words + ACK
+            if sCnt = int2slv(7, sCnt'length) then -- 8-bit words + ACK
               s1663State <= ACK;
             end if;
           when ACK =>
             s1663State <= SHIFT; -- Send all bytes before stopping
-            if sBCnt = 3 or ioSDA = '1' then
+            if sBCnt = int2slv(3, sBCnt'length) or ioSDA = '1' then
               s1663State <= STOP;
             end if;
           when STOP =>

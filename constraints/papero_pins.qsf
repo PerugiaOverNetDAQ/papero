@@ -96,10 +96,10 @@ set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to oVA_SHIFT_IN[0]
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to oVA_CLKb[0]
 
 set_instance_assignment -name AUTO_OPEN_DRAIN_PINS ON -to ioVSET_SDA[0]
-set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to ioVSET_SDA[0]
+#set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to ioVSET_SDA[0]
 
 set_instance_assignment -name AUTO_OPEN_DRAIN_PINS ON -to ioVSET_SDA[1]
-set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to ioVSET_SDA[1]
+#set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to ioVSET_SDA[1]
 
 #set_location_assignment PIN_V12 -to GPIO_0[0]
 #set_location_assignment PIN_E8 -to GPIO_0[1]

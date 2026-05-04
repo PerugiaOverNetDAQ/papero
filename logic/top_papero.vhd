@@ -209,6 +209,7 @@ architecture std of top_papero is
   signal sExtTsCount : std_logic_vector(63 downto 0);
 
   -- HV DACs and ADCs
+  signal sbiasStart : std_logic;
   signal sHvRqt : std_logic_vector(1 downto 0);
   signal sHvAck : std_logic_vector(1 downto 0);
   signal sHvErr : std_logic_vector(1 downto 0);
@@ -658,8 +659,22 @@ begin
       oFASTDATA_WE    => sDetIntfWe,
       iFASTDATA_AFULL => sDetIntfAfull
       );
+
+  --!@brief Temporary: generate reset pulse for starting bias voltage. @todo
+  biasStartEdge : altera_edge_detector
+    generic map(
+      PULSE_EXT             => 5,
+      EDGE_TYPE             => 1,
+      IGNORE_RST_WHILE_BUSY => 0
+      )
+    port map (
+      clk       => sClk,
+      rst_n     => hps_fpga_reset_n_synch,
+      signal_in => fpga_debounced_buttons_n(0),
+      pulse_out => sbiasStart
+      );
   
-  sHvRqt(1) <= sRegArray(rHV_PARAM)(31) or fpga_debounced_buttons_n(0); --@todo Remove the override with the button, it's just for testing purposes
+  sHvRqt(1) <= sRegArray(rHV_PARAM)(31) or sbiasStart; --@todo Remove the override with the button, it's just for testing purposes
   sHvValue1 <= sRegArray(rHV_PARAM)(25 downto 16);
   sHvMon(31) <= sHvAck(1);
   sHvMon(30) <= sHvErr(1);
@@ -675,7 +690,7 @@ begin
       oSCL  => oVSET_SCL(1)
     );
   
-  sHvRqt(0) <= sRegArray(rHV_PARAM)(15) or fpga_debounced_buttons_n(0); --@todo Remove the override with the button, it's just for testing purposes;
+  sHvRqt(0) <= sRegArray(rHV_PARAM)(15) or sbiasStart; --@todo Remove the override with the button, it's just for testing purposes;
   sHvValue0 <= sRegArray(rHV_PARAM)(9 downto 0);
   sHvMon(15) <= sHvAck(0);
   sHvMon(14) <= sHvErr(0);
