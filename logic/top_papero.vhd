@@ -129,7 +129,8 @@ entity top_papero is
     iCTX_TRIG_SDA : in  std_logic;
     oCTX_BUSY : out std_logic;
     oCTX_TRIG : out std_logic;
-    oCTX_GND : out  std_logic_vector(11 downto 0)
+    oCTX_GND  : out  std_logic_vector(8 downto 0);
+    ioCTX_OD  : inout std_logic_vector(2 downto 0)
     );
 end entity top_papero;
 
@@ -780,6 +781,8 @@ begin
 
   --- I/O synchronization and buffering ----------------------------------------
   oCTX_GND <= (others => '0');
+  ioCTX_OD <= (others => 'Z');
+  
   BCO_CLK_SYNCH : sync_edge
     generic map (
       pSTAGES => 3
