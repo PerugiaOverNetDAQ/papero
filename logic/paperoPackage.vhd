@@ -26,6 +26,8 @@ package paperoPackage is
   constant cFDI_WIDTH     : natural := 32;  --!Width of FDI FIFO
   constant cFDI_DEPTH     : natural := 4096;  --!Number of words in the FDI FIFO
   constant cLENCONV_DEPTH : natural := 16;  --!Number of words in the length converter FIFO
+  constant cHDR_WORDS     : natural := 12; --!Event header words
+  constant cMAX_WORDS_PER_EVT : natural := (cTOTAL_ADCS*cFE_CLOCK_CYCLES/(cFDI_WIDTH/cADC_DATA_WIDTH))+cHDR_WORDS; --(14*2*64/(32/16))+12=896+12=908
 
   --Housekeeping reader
   constant cF2H_HK_SOP    : std_logic_vector(31 downto 0) := x"55AADEAD";  --!Start of Packet for the FPGA-2-HPS FSM
@@ -170,6 +172,8 @@ package paperoPackage is
     trigId  : std_logic_vector(15 downto 0);  --!Trigger ID
     intTime : std_logic_vector(63 downto 0);  --!Internal Timestamp
     extTime : std_logic_vector(63 downto 0);  --!External Timestamp
+    biasSet : std_logic_vector(31 downto 0);  --!Bias Settings
+    biasCur : std_logic_vector(31 downto 0);  --!Bias Currents
   end record tF2hMetadata;
 
   --!Bias monitorin LTC2312 output port

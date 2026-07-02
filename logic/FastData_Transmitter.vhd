@@ -42,7 +42,7 @@ end FastData_Transmitter;
 --!@copydoc FastData_Transmitter.vhd
 architecture Behavior of FastData_Transmitter is
 -- Dichiarazione degli stati della FSM
-  type tStatus is (RESET, IDLE, SOP, LENG, FWV, TRIG_NUM, TRIG_TYPE, INT_TIME_0, INT_TIME_1, EXT_TIME_0, EXT_TIME_1, PAYLOAD, TRAILER, CRC);  -- La FastData_Transmitter è una macchina a stati costituita da 14 stati.
+  type tStatus is (RESET, IDLE, SOP, LENG, FWV, TRIG_NUM, TRIG_TYPE, INT_TIME_0, INT_TIME_1, EXT_TIME_0, EXT_TIME_1, BIAS_SET, BIAS_CURRENT, PAYLOAD, TRAILER, CRC);
   signal sPS : tStatus;
 
 -- Set di costanti utili per la risoluzione del pacchetto ricevuto.
@@ -152,13 +152,13 @@ begin
               sPS <= SOP;
             end if;
 
-          -- Stato di LENGTH. Inoltro della parola contenente la lunghezza del pacchetto: Payload 32-bit words + 10
+          -- Stato di LENGTH. Inoltro della parola contenente la lunghezza del pacchetto: Payload 32-bit words + 12
           when LENG =>
             if (iFIFO_AFULL = '0') then
               sFifoData <= iMETADATA.pktLen;
               sFifoWe   <= '1';
               sPS       <= FWV;
-              sLength   <= iMETADATA.pktLen - int2slv(10, sLength'length);
+              sLength   <= iMETADATA.pktLen - int2slv(cHDR_WORDS, sLength'length);
             else
               sPS <= LENG;
             end if;
@@ -235,9 +235,31 @@ begin
               sFifoData <= iMETADATA.extTime(31 downto 0);
               sFifoWe   <= '1';
               sCRC32_en <= '1';
-              sPS       <= PAYLOAD;
+              sPS       <= BIAS_SET;
             else
               sPS <= EXT_TIME_1;
+            end if;
+            
+          -- Send the bias settings metadata word
+          when BIAS_SET =>
+            if (iFIFO_AFULL = '0') then
+              sFifoData <= iMETADATA.biasSet;
+              sFifoWe   <= '1';
+              sCRC32_en <= '1';
+              sPS       <= BIAS_CURRENT;
+            else
+              sPS <= BIAS_SET;
+            end if;
+          
+          -- Send the bias currents metadata word
+          when BIAS_CURRENT =>
+            if (iFIFO_AFULL = '0') then
+              sFifoData <= iMETADATA.biasCur;
+              sFifoWe   <= '1';
+              sCRC32_en <= '1';
+              sPS       <= PAYLOAD;
+            else
+              sPS <= BIAS_CURRENT;
             end if;
 
           -- Stato di PAYLOAD. Inoltro delle parole di payload dalla FIFO a monte a quella a valle rispetto al FastData_Transmitter

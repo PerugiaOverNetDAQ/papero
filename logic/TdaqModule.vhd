@@ -133,6 +133,8 @@ begin
   sMetaDataIn.trigId  <= sTrigId;
   sMetaDataIn.intTime <= sTrigSerial & sCrcStatus & "0000000" & sSsId & x"00" & sTrigType;
   sMetaDataIn.extTime <= iEXT_TS;
+  sMetaDataIn.biasSet <= sRegArray(rHV_PARAM);
+  sMetaDataIn.biasCur <= iHV_MON;
 
   --Ports assignments
   oREG_ARRAY <= sRegArray;
@@ -220,7 +222,7 @@ begin
       pDEPTH       => pFDI_DEPTH,
       pUSEDW_WIDTH => ceil_log2(pFDI_DEPTH),
       pAEMPTY_VAL  => 2,
-      pAFULL_VAL   => pFDI_DEPTH-906-3,
+      pAFULL_VAL   => pFDI_DEPTH-cMAX_WORDS_PER_EVT-3,
       pSHOW_AHEAD  => "OFF"
       )
     port map(
@@ -303,7 +305,7 @@ begin
     );
   metaDataFifo_i : metaDataFifo
     generic map(
-      pFIFOs => 7,
+      pFIFOs => 9,
       pWIDTH => 32
     )
     port map (
@@ -342,8 +344,8 @@ begin
   sFpgaRegIntf.regs(rFDI_FIFO_NUMWORD)
     (cREG_WIDTH-1 downto sFdiFifoUsedW'left+1) <= (others => '0');
   sFpgaRegIntf.we(rFDI_FIFO_NUMWORD) <= '1';
-  sFpgaRegIntf.regs(10)              <= (others => '0');
-  sFpgaRegIntf.we(10)                <= '0';
+  sFpgaRegIntf.regs(rHV_CURR_MON)    <= iHV_MON;
+  sFpgaRegIntf.we(rHV_CURR_MON)      <= '1';
   sFpgaRegIntf.regs(11)              <= (others => '0');
   sFpgaRegIntf.we(11)                <= '0';
   sFpgaRegIntf.regs(12)              <= (others => '0');

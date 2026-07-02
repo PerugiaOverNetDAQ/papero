@@ -13,7 +13,7 @@ use work.basic_package.all;
 --!@copydoc metaDataFifo.vhd
 entity metaDataFifo is
   generic (
-    pFIFOs : natural := 7;
+    pFIFOs : natural := 9;
     pWIDTH : natural := 32
     );
   port (
@@ -48,6 +48,8 @@ begin
   sData(4)               <= iMETADATA.intTime(31 downto 0);
   sData(5)               <= iMETADATA.extTime(63 downto 32);
   sData(6)               <= iMETADATA.extTime(31 downto 0);
+  sData(7)               <= iMETADATA.biasSet;
+  sData(8)               <= iMETADATA.biasCur;
 
   oMETADATA.pktLen                <= sQ(0);
   oMETADATA.trigNum               <= sQ(1);
@@ -57,6 +59,8 @@ begin
   oMETADATA.intTime(31 downto 0)  <= sQ(4);
   oMETADATA.extTime(63 downto 32) <= sQ(5);
   oMETADATA.extTime(31 downto 0)  <= sQ(6);
+  oMETADATA.biasSet               <= sQ(7);
+  oMETADATA.biasCur               <= sQ(8);
 
   oEMPTY <= sEmpty(0);
   --!@brief Generate multiple FIFOs to sample the metadata values
