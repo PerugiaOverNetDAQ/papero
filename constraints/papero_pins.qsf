@@ -415,9 +415,9 @@ set_instance_assignment -name SLEW_RATE 0 -to oVA_CLKb[1]
 set_location_assignment PIN_AG13 -to oCTX_GND[0]
 set_location_assignment PIN_AF13 -to iCTX_TIME_CLK
 set_location_assignment PIN_AG10 -to oCTX_GND[1]
-set_location_assignment PIN_AG9  -to iCTX_TRIG_SDA
+set_location_assignment PIN_AG9  -to iCTX_EXT_TRIG
 set_location_assignment PIN_U14  -to oCTX_GND[2]
-set_location_assignment PIN_U13  -to iCTX_TRIG_SCL
+set_location_assignment PIN_U13  -to iCTX_TIME_RST
 set_location_assignment PIN_AG8  -to oCTX_GND[3]
 set_location_assignment PIN_AH8  -to oCTX_BUSY
 set_location_assignment PIN_AF17 -to oCTX_TRIG
@@ -433,9 +433,9 @@ set_location_assignment PIN_AH7  -to ioCTX_OD[2]
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to oCTX_GND[0]
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to iCTX_TIME_CLK
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to oCTX_GND[1]
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to iCTX_TRIG_SDA
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to iCTX_EXT_TRIG
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to oCTX_GND[2]
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to iCTX_TRIG_SCL
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to iCTX_TIME_RST
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to oCTX_GND[3]
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to oCTX_BUSY
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to oCTX_TRIG
@@ -455,9 +455,9 @@ set_instance_assignment -name AUTO_OPEN_DRAIN_PINS ON -to ioCTX_OD[2]
 set_instance_assignment -name CURRENT_STRENGTH_NEW 4MA -to oCTX_GND[0]
 #set_instance_assignment -name CURRENT_STRENGTH_NEW 4MA -to iCTX_TIME_CLK
 set_instance_assignment -name CURRENT_STRENGTH_NEW 4MA -to oCTX_GND[1]
-#set_instance_assignment -name CURRENT_STRENGTH_NEW 4MA -to iCTX_TRIG_SDA
+#set_instance_assignment -name CURRENT_STRENGTH_NEW 4MA -to iCTX_EXT_TRIG
 set_instance_assignment -name CURRENT_STRENGTH_NEW 4MA -to oCTX_GND[2]
-#set_instance_assignment -name CURRENT_STRENGTH_NEW 4MA -to iCTX_TRIG_SCL
+#set_instance_assignment -name CURRENT_STRENGTH_NEW 4MA -to iCTX_TIME_RST
 set_instance_assignment -name CURRENT_STRENGTH_NEW 4MA -to oCTX_GND[3]
 set_instance_assignment -name CURRENT_STRENGTH_NEW 4MA -to oCTX_BUSY
 set_instance_assignment -name CURRENT_STRENGTH_NEW 4MA -to oCTX_TRIG
@@ -473,9 +473,9 @@ set_instance_assignment -name CURRENT_STRENGTH_NEW 4MA -to ioCTX_OD[2]
 set_instance_assignment -name SLEW_RATE 0 -to oCTX_GND[0]
 #set_instance_assignment -name SLEW_RATE 0 -to iCTX_TIME_CLK
 set_instance_assignment -name SLEW_RATE 0 -to oCTX_GND[1]
-#set_instance_assignment -name SLEW_RATE 0 -to iCTX_TRIG_SDA
+#set_instance_assignment -name SLEW_RATE 0 -to iCTX_EXT_TRIG
 set_instance_assignment -name SLEW_RATE 0 -to oCTX_GND[2]
-#set_instance_assignment -name SLEW_RATE 0 -to iCTX_TRIG_SCL
+#set_instance_assignment -name SLEW_RATE 0 -to iCTX_TIME_RST
 set_instance_assignment -name SLEW_RATE 0 -to oCTX_GND[3]
 set_instance_assignment -name SLEW_RATE 0 -to oCTX_BUSY
 set_instance_assignment -name SLEW_RATE 0 -to oCTX_TRIG

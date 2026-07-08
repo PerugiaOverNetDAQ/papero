@@ -1,5 +1,12 @@
 --!@file top_papero.vhd
---!brief Top module of the papero FPGA gateware
+--!brief Top module of the papero FPGA gateware.
+--!@details
+--!
+--!Instantiates HPS, TDAQ module, and ancillary electronics.
+--!To add a detector readout:
+--! - Connect the detector interface to the fast interface of the TDAQ module
+--!  - Add the needed pin to the ports and the papero_pins.qsf file.
+--!
 --!@todo Add reset to the HPS-FPGA fifos
 --!@author Matteo D'Antonio, matteo.dantonio@studenti.unipg.it
 --!@author Mattia Barbanera, mattia.barbanera@infn.it
@@ -125,8 +132,8 @@ entity top_papero is
     --- ARDUINO HEADER ---------------------------------------------------------
     -- Central DAQ
     iCTX_TIME_CLK : in  std_logic;
-    iCTX_TRIG_SCL : in  std_logic;
-    iCTX_TRIG_SDA : in  std_logic;
+    iCTX_TIME_RST : in  std_logic;
+    iCTX_EXT_TRIG : in  std_logic;
     oCTX_BUSY : out std_logic;
     oCTX_TRIG : out std_logic;
     oCTX_GND  : out  std_logic_vector(8 downto 0);
@@ -151,9 +158,9 @@ architecture std of top_papero is
   signal sRegAddrInt, sRegAddrSyn : std_logic_vector(31 downto 0);
   signal sRegContentInt, sRegContentSyn : std_logic_vector(31 downto 0);
 
-  -- Ausiliari
-  signal fpga_debounced_buttons_n : std_logic_vector(1 downto 0);  -- debounced_bottons in logica positiva
-  signal hps_fpga_reset_n_synch   : std_logic;  -- segnale interno di RESET in logica positiva
+  -- Auxiliaries
+  signal fpga_debounced_buttons_n : std_logic_vector(1 downto 0);  -- debounced_bottons (positive logic)
+  signal hps_fpga_reset_n_synch   : std_logic;  -- Reset (positive logic)
   signal hps_cold_rst_n           : std_logic;
   signal hps_warm_rst_n           : std_logic;
   signal hps_debug_rst_n          : std_logic;
@@ -161,7 +168,7 @@ architecture std of top_papero is
   signal h2f_clk_50MHz            : std_logic;  -- user clock (50 MHz) from HPS
   signal h2f_clk_96MHz            : std_logic;  -- user clock (96 MHz) from HPS
 
-  -- fifo FPGA --> HPS contenente dati scientifici
+  -- Scientific data fifo FPGA --> HPS
   signal fast_fifo_f2h_data_in      : std_logic_vector(31 downto 0);  -- Data
   signal fast_fifo_f2h_wr_en        : std_logic;  -- Write Enable
   signal fast_fifo_f2h_full         : std_logic;  -- Fifo Full
@@ -172,7 +179,7 @@ architecture std of top_papero is
   signal fast_fifo_f2h_wr_en_csr    : std_logic;
   signal fast_fifo_f2h_data_out_csr : std_logic_vector(31 downto 0);
 
-  -- fifo FPGA --> HPS contenente dati di telemetria
+  -- Telemetry fifo FPGA --> HPS
   signal fifo_f2h_data_in      : std_logic_vector(31 downto 0);  -- Data
   signal fifo_f2h_wr_en        : std_logic;  -- Write Enable
   signal fifo_f2h_full         : std_logic;  -- Fifo Full
@@ -183,7 +190,7 @@ architecture std of top_papero is
   signal fifo_f2h_wr_en_csr    : std_logic;
   signal fifo_f2h_data_out_csr : std_logic_vector(31 downto 0);
 
-  -- fifo HPS --> FPGA contenente dati di configurazione
+  -- Configuration fifo HPS --> FPGA
   signal fifo_h2f_data_out     : std_logic_vector(31 downto 0);  -- Data
   signal fifo_h2f_rd_en        : std_logic;                      -- Read Enable
   signal fifo_h2f_empty        : std_logic;                      -- Fifo Empty
@@ -194,7 +201,7 @@ architecture std of top_papero is
   signal fifo_h2f_data_out_csr : std_logic_vector(31 downto 0);
 
   -- TDAQ Module
-  signal sExtTrig      : std_logic;
+  signal sExtTrigSynch : std_logic;
   signal sMainTrig     : std_logic;
   signal sMainBusy     : std_logic;
   signal sTrgBusiesAnd : std_logic_vector(7 downto 0);
@@ -245,8 +252,8 @@ architecture std of top_papero is
 
   signal sMultiAdcSynch : tMultiAdc2FpgaIntf;
   signal sBcoClkSynch   : std_logic;
-  signal sI2cScl        : std_logic;
-  signal sI2cSda        : std_logic;
+  signal sBcoRstReplica : std_logic;
+  signal sBcoRstSynch   : std_logic;
   signal sBusy          : std_logic;
   signal sErrors        : std_logic;
   signal sDebug         : std_logic_vector(7 downto 0);
@@ -259,7 +266,7 @@ begin
   
   LED <= (others => '0');
 
-  fpga_debounced_buttons_n <= not fpga_debounced_buttons;  -- I bottoni dell'FPGA lavorano in logica negata, i nostri moduli in logica positiva
+  fpga_debounced_buttons_n <= not fpga_debounced_buttons;  --FPGA buttons work in negated logic, opposite to the internal modules
 
   hps_cold_rst_n  <= not hps_cold_reset;
   hps_warm_rst_n  <= not hps_warm_reset;
@@ -530,7 +537,8 @@ begin
       );
 
   sExtTsEn  <= sBcoClkSynch;
-  sExtTsRst <= sCountersRst or sDetIntfRst or not sRunMode;
+  sExtTsRst <= sBcoRstSynch or sCountersRst
+               or sDetIntfRst or not sRunMode;
   --!@brief External timestamp counter
   extTimestampCounter : counter
     generic map (
@@ -566,9 +574,7 @@ begin
       iEXT_TS             => sExtTsCount,
       iHV_MON             => sHvMon,
       --
-      iTRIG_SDA           => sI2cSda,
-      iTRIG_SCL           => sI2cScl,
-      --
+      iEXT_TRIG           => sExtTrigSynch,
       oTRIG               => sMainTrig,
       oBUSY               => sMainBusy,
       iTRG_BUSIES_AND     => sTrgBusiesAnd,
@@ -799,21 +805,22 @@ begin
       pSTAGES => 3
       )
     port map (
-      iCLK => sClk,
-      iRST => '0',
-      iD   => iCTX_TRIG_SCL,
-      oQ   => sI2cScl
+      iCLK    => sClk,
+      iRST    => '0',
+      iD      => iCTX_TIME_RST,
+      oQ      => sBcoRstReplica,
+      oEDGE_R => sBcoRstSynch
       );
   
-  EXT_TRIG_SYNCH : sync_edge
+  EXT_TRIG_RE : sync_edge
     generic map (
       pSTAGES => 3
       )
     port map (
-      iCLK  => sClk,
-      iRST  => '0',
-      iD    => iCTX_TRIG_SDA,
-      oQ    => sI2cSda
+      iCLK    => sClk,
+      iRST    => '0',
+      iD      => iCTX_EXT_TRIG,
+      oEDGE_R => sExtTrigSynch
       );
 
   sMultiAdcSynch <= sMultiAdc;

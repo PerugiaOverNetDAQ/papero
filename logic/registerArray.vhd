@@ -40,6 +40,9 @@ begin
   FPGA_REG_GEN : for ff in 0 to cFPGA_REGISTERS-1 generate
     sRegisters(ff+cHPS_REGISTERS) <= sFpgaReg(ff);
   end generate FPGA_REG_GEN;
+  oCNT.busy  <= '0';
+  oCNT.error <= '0';
+  oCNT.compl <= '0';
   ------------------------------------------------------------------------------
 
   --!@brief Update registers' content
@@ -47,9 +50,11 @@ begin
   begin
     RCLK_IF : if (rising_edge(iCLK)) then
       RST_IF : if (iRST = '1') then
-        sHpsReg  <= cHPS_REG_NULL;
-        sFpgaReg <= cFPGA_REG_NULL;
+        oCNT.reset  <= '1';
+        sHpsReg     <= cHPS_REG_NULL;
+        sFpgaReg    <= cFPGA_REG_NULL;
       else
+        oCNT.reset <= '0';
         sHpsReg  <= sHpsReg;            --default value, update if necessary
         sFpgaReg <= sFpgaReg;           --default value, update if necessary
 

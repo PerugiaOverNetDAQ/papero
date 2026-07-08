@@ -460,8 +460,7 @@ package paperoPackage is
       iEXT_TS             : in  std_logic_vector(63 downto 0);
       iHV_MON             : in std_logic_vector(31 downto 0);
       --# {{TrigBusy|TrigBusy}}
-      iTRIG_SDA           : in  std_logic;
-      iTRIG_SCL           : in  std_logic;
+      iEXT_TRIG           : in std_logic;
       --# {{TrigBusy|TrigBusy}}
       oTRIG               : out std_logic;
       oBUSY               : out std_logic;
@@ -565,47 +564,6 @@ package paperoPackage is
       oEMPTY    : out std_logic;
       iMETADATA : in  tF2hMetadata;
       oMETADATA : out tF2hMetadata
-    );
-  end component;
-
-  component CRC16_GENERATOR is
-    port (
-      CLOCK       : in  std_logic;
-      RESET       : in  std_logic;    
-      DATA_IN_EN  : in  std_logic;         
-      DATA_IN     : in  std_logic_vector (15 downto 0);
-      CRC_OUT     : out std_logic_vector (15 downto 0)
-    );
-  end component;
-
-  component trigger_rx is
-    port (
-      clk   : in std_logic;
-      reset : in std_logic;
-      iBusy : in std_logic;
-      --
-      busy_clear      : in std_logic;
-      trigger         : out std_logic;
-      sub_system_id   : out std_logic_vector(7 downto 0);
-      trigger_type    : out std_logic_vector(7 downto 0);
-      trigger_serial  : out std_logic_vector(31 downto 0);
-      crc_status      : out std_logic;
-      end_flag        : out std_logic;
-      --
-      ro_sda  : in  std_logic;
-      ren_sda : out std_logic;
-      de_sda  : out std_logic;
-      di_sda  : out std_logic;
-      --
-      ro_scl  : in std_logic;
-      ren_scl : out std_logic;
-      de_scl  : out std_logic;
-      di_scl  : out std_logic;
-      --
-      ro_busy   : in std_logic;
-      ren_busy  : out std_logic;
-      de_busy   : out std_logic;
-      di_busy   : out std_logic
     );
   end component;
 

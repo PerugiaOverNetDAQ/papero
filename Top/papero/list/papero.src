@@ -23,10 +23,6 @@ logic/metaDataFifo.vhd
 logic/LT1663Intf.vhd
 logic/biasCurrLTC2312.vhd
 
-#I2C Trigger Tianwei
-logic/i2c_trig/crc16_generator.vhd
-logic/i2c_trig/trigger_rx.v
-
 #Basic functions_md
 logic/edge_detector_md.vhd
 logic/Key_Pulse_Gen.vhd
