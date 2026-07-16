@@ -264,7 +264,7 @@ begin
   sClk          <= h2f_clk_50MHz;
   stm_hw_events <= "000000000000000" & SW & fpga_led_internal & fpga_debounced_buttons;
   
-  LED <= (others => '0');
+  LED(7 downto 4) <= (others => '0');
 
   fpga_debounced_buttons_n <= not fpga_debounced_buttons;  --FPGA buttons work in negated logic, opposite to the internal modules
 
@@ -663,7 +663,9 @@ begin
       iMULTI_ADC      => sMultiAdcSynch,
       oFASTDATA_DATA  => sDetIntfQ,
       oFASTDATA_WE    => sDetIntfWe,
-      iFASTDATA_AFULL => sDetIntfAfull
+      iFASTDATA_AFULL => sDetIntfAfull,
+      iSWITCH  => SW,
+      oLED  => LED(3 downto 0)
       );
 
   -- GPIO connections ----------------------------------------------------------

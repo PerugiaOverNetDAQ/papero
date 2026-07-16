@@ -24,6 +24,7 @@ use IEEE.STD_LOGIC_1164.all;
 use IEEE.STD_LOGIC_UNSIGNED.all;
 use IEEE.NUMERIC_STD.all;
 
+use work.basic_package.all;
 use work.paperoPackage.all;
 
 --!@copydoc Config_Receiver.vhd

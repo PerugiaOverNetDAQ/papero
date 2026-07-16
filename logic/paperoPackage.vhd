@@ -526,7 +526,9 @@ package paperoPackage is
       --# {{FastDATA Interface|FastDATA Interface}}
       oFASTDATA_DATA  : out std_logic_vector(cREG_WIDTH-1 downto 0);
       oFASTDATA_WE    : out std_logic;
-      iFASTDATA_AFULL : in  std_logic
+      iFASTDATA_AFULL : in  std_logic;
+      iSWITCH         : in std_logic_vector(3 downto 0);
+      oLED            : out std_logic_vector(3 downto 0)
       );
   end component;
 
@@ -547,56 +549,10 @@ package paperoPackage is
     );
   end component;
 
-  -- Functions -----------------------------------------------------------------
-  --!@brief Compute the parity bit of an 8-bit data with both polarities
-  --!@param[in] p String containing the polarity, "EVEN" or "ODD"
-  --!@param[in] d Input 8-bit data
-  --!@return  Parity bit of the incoming 8-bit data
-  function parity8bit (p : string; d : std_logic_vector(7 downto 0)) return std_logic;
-
-  --!@brief Compute the and between all the elements of a std_logic_vector
-  --!@param[in] slv Input std_logic_vector to be reduced to a std_logic
-  --!@return  And of all of the slv elements
-  function unary_and(slv : in std_logic_vector) return std_logic;
-
-  --!@brief Compute the or between all the elements of a std_logic_vector
-  --!@param[in] slv Input std_logic_vector to be reduced to a std_logic
-  --!@return  Or of all of the slv elements
-  function unary_or(slv : in std_logic_vector) return std_logic;
 
 end paperoPackage;
 
 --!@copydoc paperoPackage.vhd
 package body paperoPackage is
-  function parity8bit (p : string; d : std_logic_vector(7 downto 0)) return std_logic is
-    variable x : std_logic;
-  begin
-    if p = "ODD" then
-      x := not (d(0) xor d(1) xor d(2) xor d(3)
-                xor d(4) xor d(5) xor d(6) xor d(7));
-    elsif p = "EVEN" then
-      x := d(0) xor d(1) xor d(2) xor d(3)
-           xor d(4) xor d(5) xor d(6) xor d(7);
-    end if;
-    return x;
-  end function;
-
-  function unary_and(slv : in std_logic_vector) return std_logic is
-    variable and_v : std_logic := '1';  -- Null input returns '1'
-  begin
-    for i in slv'range loop
-      and_v := and_v and slv(i);
-    end loop;
-    return and_v;
-  end function;
-
-  function unary_or(slv : in std_logic_vector) return std_logic is
-    variable or_v : std_logic := '0';   -- Null input returns '0'
-  begin
-    for i in slv'range loop
-      or_v := or_v or slv(i);
-    end loop;
-    return or_v;
-  end function;
 
 end package body;
