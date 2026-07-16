@@ -4,8 +4,8 @@ logic/top_papero.vhd
 #Packages
 logic/intel_package.vhd
 logic/paperoPackage.vhd 08
-logic/msdintf/basic_functions/basic_package.vhd
-logic/msdintf/FOOTpackage.vhd
+logic/ninfee-msd/VHDL_basic_functions/basic_package.vhd
+logic/ninfee-msd/FOOTpackage.vhd
 
 #Project-specific files
 logic/registerArray.vhd 08
@@ -33,7 +33,7 @@ logic/Variable_PWM_FSM.vhd
 
 #Qsys IPs: regenerate the IP for each new build
 #Add the qip if you want to generate it only once
-ip/soc_system/soc_system.qsys noadd --synthesis=VHDL
+ip/soc_system/soc_system.qsys --synthesis=VHDL
 
 #Other IPs
 ip/edge_detect/altera_edge_detector.v
@@ -41,21 +41,49 @@ ip/debounce/debounce.v
 ip/altsource_probe/hps_reset.qip
 
 #Basic functions in the msdintf submodule
-logic/msdintf/basic_functions/sync_stage.vhd
-logic/msdintf/basic_functions/sync_edge.vhd
-logic/msdintf/basic_functions/shift_register.vhd
-logic/msdintf/basic_functions/pulse_generator.vhd
-logic/msdintf/basic_functions/parametric_fifo_synch.vhd
-logic/msdintf/basic_functions/parametric_fifo_dp.vhd
-logic/msdintf/basic_functions/edge_detector.vhd
-logic/msdintf/basic_functions/delay_timer.vhd
-logic/msdintf/basic_functions/counter.vhd
-logic/msdintf/basic_functions/clock_divider.vhd
-logic/msdintf/basic_functions/clock_divider_2.vhd
+logic/ninfee-msd/VHDL_basic_functions/clock_divider.vhd
+logic/ninfee-msd/VHDL_basic_functions/clock_divider_2.vhd
+logic/ninfee-msd/VHDL_basic_functions/counter.vhd
+logic/ninfee-msd/VHDL_basic_functions/countGenerator.vhd
+logic/ninfee-msd/VHDL_basic_functions/CRC32.vhd
+logic/ninfee-msd/VHDL_basic_functions/delay_timer.vhd
+logic/ninfee-msd/VHDL_basic_functions/differential_rx.vhd
+logic/ninfee-msd/VHDL_basic_functions/edge_detector.vhd
+logic/ninfee-msd/VHDL_basic_functions/edge_detector_2.vhd
+logic/ninfee-msd/VHDL_basic_functions/parametric_fifo_dp.vhd
+logic/ninfee-msd/VHDL_basic_functions/parametric_fifo_synch.vhd
+logic/ninfee-msd/VHDL_basic_functions/parametric_fifo_synch_MLAB.vhd
+logic/ninfee-msd/VHDL_basic_functions/parametric_ram_tp.vhd
+logic/ninfee-msd/VHDL_basic_functions/parametric_ram_dp.vhd
+logic/ninfee-msd/VHDL_basic_functions/pulse_generator.vhd
+logic/ninfee-msd/VHDL_basic_functions/shift_register.vhd
+logic/ninfee-msd/VHDL_basic_functions/sync_edge.vhd
+logic/ninfee-msd/VHDL_basic_functions/sync_stage.vhd
+
+#Calib
+logic/ninfee-msd/Calibration/CalibrationRAM.vhd         2008
+logic/ninfee-msd/Calibration/CalibrationWrapper.vhd     2008
+logic/ninfee-msd/Calibration/CNSubtraction.vhd          2008
+logic/ninfee-msd/Calibration/DSPSQ.vhd                  2008
+logic/ninfee-msd/Calibration/DSPSQ_wrap.vhd             2008
+logic/ninfee-msd/Calibration/FOOT_FIFO.vhd              2008
+logic/ninfee-msd/Calibration/FOOT_RAM.vhd               2008
+logic/ninfee-msd/Calibration/LadderWrapper.vhd          2008
+#logic/ninfee-msd/Calibration/Heap.vhd                  2008
+logic/ninfee-msd/Calibration/MultiCalib.vhd             2008
+logic/ninfee-msd/Calibration/PedestalSubtraction.vhd    2008
+logic/ninfee-msd/Calibration/SMA.vhd                    2008
+logic/ninfee-msd/Calibration/SMAx2.vhd                  2008
+logic/ninfee-msd/Calibration/SMAx2_wrap.vhd             2008
+logic/ninfee-msd/Calibration/SQRT_wrap.vhd              2008
+logic/ninfee-msd/Calibration/Sqrt32_sequential.vhd      2008
+
+#Clust
+logic/ninfee-msd/Clust/ClusterModule.vhd                2008
 
 #MSD interface files
-logic/msdintf/FE_interface.vhd
-logic/msdintf/multiADC_interface.vhd
-logic/msdintf/multiAdcPlaneInterface.vhd
+logic/ninfee-msd/FE_interface.vhd
+logic/ninfee-msd/multiADC_interface.vhd
+logic/ninfee-msd/multiAdcPlaneInterface.vhd
 #logic/msdintf/Data_Builder.vhd
 #logic/msdintf/Data_Builder_Top.vhd

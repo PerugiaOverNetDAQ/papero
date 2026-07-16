@@ -67,3 +67,7 @@ ip/soc_system/.qsys_edit
 bin/
 Projects/
 *.cmp
+
+#Sigasi
+.sigasi
+project.sigasi

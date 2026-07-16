@@ -332,7 +332,7 @@ begin
       
 
 
-      -- WIP.
+      -- FIXME: 
       -- Collego con lo iSWITCH(3). 
       -- Quando la EventRam viene segnalata valida ce viene avviato il clustering vuol dire che l'evento intero è già stato inserito nelle FIFO.
       -- Se iSWITCH(3) è ad uno, viene inviato nelle fifo un altro evento paddato della stessa dimensione di un evento normale, ma con al suo interno
