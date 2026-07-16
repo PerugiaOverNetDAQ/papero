@@ -136,7 +136,8 @@ entity top_papero is
     iCTX_EXT_TRIG : in  std_logic;
     oCTX_BUSY : out std_logic;
     oCTX_TRIG : out std_logic;
-    oCTX_GND  : out  std_logic_vector(8 downto 0);
+    oCTX_GND  : out  std_logic_vector(6 downto 0);
+    iCTX_GND  : out  std_logic_vector(1 downto 0);
     ioCTX_OD  : inout std_logic_vector(2 downto 0)
     );
 end entity top_papero;
