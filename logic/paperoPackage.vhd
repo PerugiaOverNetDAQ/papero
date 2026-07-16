@@ -450,6 +450,9 @@ package paperoPackage is
       iFASTDATA_DATA      : in  std_logic_vector(cREG_WIDTH-1 downto 0);
       iFASTDATA_WE        : in  std_logic;
       oFASTDATA_AFULL     : out std_logic;
+      -- Segnale che associa metadata a un payload reale
+      iPACKET_VALID       : in  std_logic;
+      iMIXED_MODE         : in  std_logic;
       --# {{H2F_FIFO|H2F_FIFO}}
       iFIFO_H2F_EMPTY     : in  std_logic;
       iFIFO_H2F_DATA      : in  std_logic_vector(31 downto 0);
@@ -527,6 +530,9 @@ package paperoPackage is
       oFASTDATA_DATA  : out std_logic_vector(cREG_WIDTH-1 downto 0);
       oFASTDATA_WE    : out std_logic;
       iFASTDATA_AFULL : in  std_logic;
+      -- Segnale associato alla prima parola del payload
+      oPACKET_VALID   : out std_logic;
+      oMIXED_EVENT    : out std_logic;
       iSWITCH         : in std_logic_vector(3 downto 0);
       oLED            : out std_logic_vector(3 downto 0)
       );

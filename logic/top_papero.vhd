@@ -240,6 +240,9 @@ architecture std of top_papero is
   signal sDetIntfQ      : std_logic_vector(cREG_WIDTH-1 downto 0);
   signal sDetIntfWe     : std_logic;
   signal sDetIntfAfull  : std_logic;
+  -- Matadata associato al payload reale
+  signal sPacketValid   : std_logic;
+  signal sMixedMode     : std_logic;
   signal sFeA           : tFpga2FeIntf;
   signal sFeB           : tFpga2FeIntf;
   signal sAdcA          : tFpga2AdcIntf;
@@ -265,7 +268,6 @@ begin
   stm_hw_events <= "000000000000000" & SW & fpga_led_internal & fpga_debounced_buttons;
   
   LED(7 downto 4) <= (others => '0');
-
   fpga_debounced_buttons_n <= not fpga_debounced_buttons;  --FPGA buttons work in negated logic, opposite to the internal modules
 
   hps_cold_rst_n  <= not hps_cold_reset;
@@ -582,6 +584,8 @@ begin
       iFASTDATA_DATA      => sDetIntfQ,
       iFASTDATA_WE        => sDetIntfWe,
       oFASTDATA_AFULL     => sDetIntfAfull,
+      iPACKET_VALID       => sPacketValid,
+      iMIXED_MODE         => sMixedMode,
       --
       iFIFO_H2F_EMPTY     => fifo_h2f_empty,
       iFIFO_H2F_DATA      => fifo_h2f_data_out,
@@ -664,6 +668,8 @@ begin
       oFASTDATA_DATA  => sDetIntfQ,
       oFASTDATA_WE    => sDetIntfWe,
       iFASTDATA_AFULL => sDetIntfAfull,
+      oPACKET_VALID   => sPacketValid,
+      oMIXED_EVENT    => sMixedMode,
       iSWITCH  => SW,
       oLED  => LED(3 downto 0)
       );
