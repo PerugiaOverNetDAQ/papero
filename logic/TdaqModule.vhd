@@ -37,7 +37,8 @@ entity TdaqModule is
     iFASTDATA_WE        : in  std_logic;
     oFASTDATA_AFULL     : out std_logic;
     iPACKET_VALID       : in  std_logic;
-    iMIXED_MODE         : in  std_logic; 
+    iPAYLOAD_WORDS      : in  std_logic_vector(cREG_WIDTH-1 downto 0);
+    iTRIG_TYPE          : in  std_logic_vector(7 downto 0);
     --H2F
     iFIFO_H2F_EMPTY     : in  std_logic;  --!FIFO H2F Wait Request
     iFIFO_H2F_DATA      : in  std_logic_vector(31 downto 0);  --!FIFO H2F q
@@ -55,9 +56,6 @@ end entity TdaqModule;
 
 --!@copydoc TdaqModule.vhd
 architecture std of TdaqModule is
-  -- Numero di parole esterne al payload
-  constant cFASTDATA_OVERHEAD : natural := 10;
-
   -- HPS interface
   signal sHkRdrCnt        : tControlIn;
   signal sHkRdrIntstart   : std_logic;
@@ -95,6 +93,7 @@ architecture std of TdaqModule is
   signal sTrigCfg           : std_logic_vector(31 downto 0);
   signal sBusy              : std_logic;
   signal sTrig              : std_logic;
+  signal sTrigDelayed       : std_logic;
 
   -- Trigger and detector information
   signal sSsId        : std_logic_vector(7 downto 0);
@@ -108,6 +107,7 @@ architecture std of TdaqModule is
   signal sTestUnitWr    : std_logic;
   signal sTestUnitAfull : std_logic;
   signal sPacketLength  : std_logic_vector(cREG_WIDTH-1 downto 0);
+  signal sPacketTrigType : std_logic_vector(7 downto 0);
 
   -- Metadata del trigger più recente conservato fino al payload
   signal sPendingTrigNum : std_logic_vector(31 downto 0);
@@ -130,9 +130,9 @@ begin
   --
   sTrigCfg                <= sRegArray(rTRIGBUSY_LOGIC);
 
-  -- La lunghezza include il payload e le parole esterne
-  -- Il payload MIXED contiene una parte RAW e una parte compressa
-  sPacketLength <= std_logic_vector(shift_left(unsigned(sRegArray(rPKT_LEN)) - to_unsigned(cFASTDATA_OVERHEAD, cREG_WIDTH),1) +to_unsigned(cFASTDATA_OVERHEAD, cREG_WIDTH)) when iMIXED_MODE = '1' and sTestUnitEn = '0' else sRegArray(rPKT_LEN);
+  -- Legacy e Test Unit mantengono la lunghezza configurata. Per i pacchetti di LW si usa invece il numero di parole realmente scritte nella FIFO, al quale si aggiunge l'overhead di 10
+  sPacketLength <= sRegArray(rPKT_LEN) when sTestUnitEn = '1' or iTRIG_TYPE = cTRIG_TYPE_LEGACY else std_logic_vector(unsigned(iPAYLOAD_WORDS) + to_unsigned(cFASTDATA_OVERHEAD, cREG_WIDTH));
+  sPacketTrigType <= cTRIG_TYPE_LEGACY when sTestUnitEn = '1' else iTRIG_TYPE;
 
   -- Il descrittore usa il trigger conservato e il tipo del payload reale
   sMetaDataIn.detId   <= sPendingDetId;
@@ -140,8 +140,8 @@ begin
   sMetaDataIn.trigNum <= sPendingTrigNum;
   sMetaDataIn.trigId  <= sPendingTrigId;
   sSsId <= (others=>'0');
-  sTrigType <= (others=>'0');
-  sMetaDataIn.intTime <= sPendingIntTime;
+  sTrigType <= sPacketTrigType;
+  sMetaDataIn.intTime <= sPendingIntTime(63 downto 8) & sTrigType;
   sMetaDataIn.extTime <= sPendingExtTime;
 
   -- Il trigger viene conservato senza accodare subito un descrittore
@@ -158,11 +158,26 @@ begin
         sPendingTrigNum <= sTrigCount;
         sPendingDetId   <= sRegArray(rDET_ID)(15 downto 0);
         sPendingTrigId  <= sTrigId;
-        sPendingIntTime <= iINT_TS(31 downto 0) & '1' & "0000000" & sSsId & x"00" & sTrigType;
+        -- Gli otto bit meno significativi vengono completati con il tipo
+        -- effettivo soltanto quando è nota anche la lunghezza del payload e quando poi vengono effettivamente scritti nella fifo metadata
+        sPendingIntTime <= iINT_TS(31 downto 0) & '1' & "0000000" &
+                           sSsId & x"00" & x"00";
         sPendingExtTime <= iEXT_TS;
       end if;
     end if;
   end process METADATA_TRIGGER_LATCH;
+
+  -- Priority Encoder e TEST vogliono metadata sul trigger stesso. E' necessario un clock di ritardo per scrivere nella FIFO, sennè c'è desync.
+  METADATA_TRIGGER_DELAY : process(iCLK)
+  begin
+    if rising_edge(iCLK) then
+      if iRST = '1' or sTrigEn = '0' then
+        sTrigDelayed <= '0';
+      else
+        sTrigDelayed <= sTrig;
+      end if;
+    end if;
+  end process METADATA_TRIGGER_DELAY;
 
   --Ports assignments
   oREG_ARRAY <= sRegArray;
@@ -250,7 +265,7 @@ begin
       pDEPTH       => pFDI_DEPTH,
       pUSEDW_WIDTH => ceil_log2(pFDI_DEPTH),
       pAEMPTY_VAL  => 2,
-      pAFULL_VAL   => pFDI_DEPTH-640-3,
+      pAFULL_VAL   => pFDI_DEPTH-1280-3,
       pSHOW_AHEAD  => "OFF"
       )
     port map(
@@ -290,7 +305,9 @@ begin
 
   -- Il test mantiene un pacchetto per trigger. Preso spunto dal resto del codice
   -- Il percorso reale mette nella fifo metadata assocuato solo quando inizia un payload
-  sMetaDataWr <= sTrig when sTestUnitEn = '1' else iPACKET_VALID;
+  sMetaDataWr <= sTrigDelayed
+    when sTestUnitEn = '1' or iTRIG_TYPE = cTRIG_TYPE_LEGACY else
+    iPACKET_VALID;
   MD_WR_ED : edge_detector
     port map(
       iCLK    => iCLK,

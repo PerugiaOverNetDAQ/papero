@@ -242,7 +242,8 @@ architecture std of top_papero is
   signal sDetIntfAfull  : std_logic;
   -- Matadata associato al payload reale
   signal sPacketValid   : std_logic;
-  signal sMixedMode     : std_logic;
+  signal sPayloadWords  : std_logic_vector(cREG_WIDTH-1 downto 0);
+  signal sPacketTrigType : std_logic_vector(7 downto 0);
   signal sFeA           : tFpga2FeIntf;
   signal sFeB           : tFpga2FeIntf;
   signal sAdcA          : tFpga2AdcIntf;
@@ -585,7 +586,8 @@ begin
       iFASTDATA_WE        => sDetIntfWe,
       oFASTDATA_AFULL     => sDetIntfAfull,
       iPACKET_VALID       => sPacketValid,
-      iMIXED_MODE         => sMixedMode,
+      iPAYLOAD_WORDS      => sPayloadWords,
+      iTRIG_TYPE          => sPacketTrigType,
       --
       iFIFO_H2F_EMPTY     => fifo_h2f_empty,
       iFIFO_H2F_DATA      => fifo_h2f_data_out,
@@ -669,7 +671,8 @@ begin
       oFASTDATA_WE    => sDetIntfWe,
       iFASTDATA_AFULL => sDetIntfAfull,
       oPACKET_VALID   => sPacketValid,
-      oMIXED_EVENT    => sMixedMode,
+      oPAYLOAD_WORDS  => sPayloadWords,
+      oTRIG_TYPE      => sPacketTrigType,
       iSWITCH  => SW,
       oLED  => LED(3 downto 0)
       );

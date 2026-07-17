@@ -152,6 +152,17 @@ package paperoPackage is
     full   : std_logic;                                --!Full
   end record tFifoFdiOut;
 
+  --!Fast-data packet format
+  constant cFASTDATA_OVERHEAD    : natural := 10;
+  constant cTRIG_TYPE_PEDESTAL   : std_logic_vector(7 downto 0) := x"80";
+  constant cTRIG_TYPE_SIGMA_RAW  : std_logic_vector(7 downto 0) := x"40";
+  constant cTRIG_TYPE_SIGMA      : std_logic_vector(7 downto 0) := x"20";
+  constant cTRIG_TYPE_FLAG       : std_logic_vector(7 downto 0) := x"10";
+  constant cTRIG_TYPE_LEGACY     : std_logic_vector(7 downto 0) := x"08";
+  constant cTRIG_TYPE_RAW        : std_logic_vector(7 downto 0) := x"04";
+  constant cTRIG_TYPE_COMPRESSED : std_logic_vector(7 downto 0) := x"02";
+  constant cTRIG_TYPE_MIXED      : std_logic_vector(7 downto 0) := x"01";
+
   --!Metadata for the F2H Fast TX
   type tF2hMetadata is record
     pktLen  : std_logic_vector(31 downto 0);  --!Packet Length: Number of 32-bit payload words + 10
@@ -450,9 +461,10 @@ package paperoPackage is
       iFASTDATA_DATA      : in  std_logic_vector(cREG_WIDTH-1 downto 0);
       iFASTDATA_WE        : in  std_logic;
       oFASTDATA_AFULL     : out std_logic;
-      -- Segnale che associa metadata a un payload reale
+      --# {{Metadata associato a un payload reale}}
       iPACKET_VALID       : in  std_logic;
-      iMIXED_MODE         : in  std_logic;
+      iPAYLOAD_WORDS      : in  std_logic_vector(cREG_WIDTH-1 downto 0);
+      iTRIG_TYPE          : in  std_logic_vector(7 downto 0);
       --# {{H2F_FIFO|H2F_FIFO}}
       iFIFO_H2F_EMPTY     : in  std_logic;
       iFIFO_H2F_DATA      : in  std_logic_vector(31 downto 0);
@@ -530,9 +542,10 @@ package paperoPackage is
       oFASTDATA_DATA  : out std_logic_vector(cREG_WIDTH-1 downto 0);
       oFASTDATA_WE    : out std_logic;
       iFASTDATA_AFULL : in  std_logic;
-      -- Segnale associato alla prima parola del payload
+      --# {{Metadata valido quando la lunghezza reale del payload è nota}}
       oPACKET_VALID   : out std_logic;
-      oMIXED_EVENT    : out std_logic;
+      oPAYLOAD_WORDS  : out std_logic_vector(cREG_WIDTH-1 downto 0);
+      oTRIG_TYPE      : out std_logic_vector(7 downto 0);
       iSWITCH         : in std_logic_vector(3 downto 0);
       oLED            : out std_logic_vector(3 downto 0)
       );

@@ -37,8 +37,9 @@ entity DetectorInterface is
     oFASTDATA_DATA  : out std_logic_vector(cREG_WIDTH-1 downto 0);
     oFASTDATA_WE    : out std_logic;
     iFASTDATA_AFULL : in  std_logic;
-    oPACKET_VALID   : out std_logic;    --!First payload word 
-    oMIXED_EVENT    : out std_logic;    --!Evt type
+    oPACKET_VALID   : out std_logic;    --!Payload descriptor valid
+    oPAYLOAD_WORDS  : out std_logic_vector(cREG_WIDTH-1 downto 0);
+    oTRIG_TYPE      : out std_logic_vector(7 downto 0);
 
     iSWITCH         : in std_logic_vector(3 downto 0);
     oLED            : out std_logic_vector(3 downto 0)
@@ -50,8 +51,37 @@ architecture std of DetectorInterface is
   -- Numero di parole 32 bit in un payload RAW
   constant cLW_EVENT_WORDS : positive :=
     (cTOTAL_ADCS * cADC_CHANNELS * cADC_DATA_WIDTH) / cREG_WIDTH;
+  constant cMODE_LEGACY     : std_logic_vector(1 downto 0) := "00"; --SW[3:2]
+  constant cMODE_RAW        : std_logic_vector(1 downto 0) := "01";
+  constant cMODE_COMPRESSED : std_logic_vector(1 downto 0) := "10";
+  constant cMODE_MIXED      : std_logic_vector(1 downto 0) := "11";
 
-  type tLW_Output_State is (RAW_OUTPUT, CLUSTER_OUTPUT, PAD_OUTPUT, DISCARD_OUTPUT);
+  type tLW_Output_State is (RAW_OUTPUT, CLUSTER_OUTPUT, DISCARD_OUTPUT);
+
+  function fCalibTrigType(
+    iCalibType : std_logic_vector(1 downto 0)
+  ) return std_logic_vector is
+  begin
+    case iCalibType is
+      when "00"   => return cTRIG_TYPE_PEDESTAL;
+      when "01"   => return cTRIG_TYPE_SIGMA_RAW;
+      when "10"   => return cTRIG_TYPE_SIGMA;
+      when others => return cTRIG_TYPE_FLAG;
+    end case;
+  end function fCalibTrigType;
+
+  function fClusterWordLimit(
+    iMode : std_logic_vector(1 downto 0)
+  ) return positive is
+  begin
+    if iMode = cMODE_MIXED then
+      -- Una RAW e al massimo una RAW-equivalente compressa (quindi taglio prima del doppio) tot 5164byte header compreso
+      return cLW_EVENT_WORDS;
+    else
+      -- Il solo compresso può occupare al massimo due RAW-equivalenti tot max sempre 5164 byte
+      return 2 * cLW_EVENT_WORDS;
+    end if;
+  end function fClusterWordLimit;
 
   --Plane interface
   signal sCntOut       : tControlIntfOut;
@@ -78,11 +108,15 @@ architecture std of DetectorInterface is
   signal sFastData_Data_LW_LSB : std_logic_vector(cADC_DATA_WIDTH-1 downto 0);
   signal sFastData_LW_HalfFull : std_logic;
   signal sLW_Output_State      : tLW_Output_State;
-  signal sMixed_Event_Armed    : std_logic;
-  signal sMixed_Packet_Busy    : std_logic;
-  -- Segnali metadata payload reale
+  signal sUse_LadderWrapper    : std_logic;
+  signal sNormal_Event_Armed   : std_logic;
+  signal sEvent_Mode           : std_logic_vector(1 downto 0);
+  signal sPacket_Busy          : std_logic;
+  -- Descrittore del payload reale
   signal sPacket_Valid_LW      : std_logic;
-  signal sPacket_Mixed_LW      : std_logic;
+  signal sPayload_Words_LW     : std_logic_vector(cREG_WIDTH-1 downto 0);
+  signal sTrig_Type_LW         : std_logic_vector(7 downto 0);
+  signal sCalib_Packet_Type    : std_logic_vector(7 downto 0);
   signal sRaw_Packet_Word_Count : natural range 0 to cLW_EVENT_WORDS-1;
 
   signal sFastData_Data_PE  : std_logic_vector(cREG_WIDTH-1 downto 0);
@@ -110,6 +144,7 @@ architecture std of DetectorInterface is
   signal sLW_Valid_ER   : std_logic;
   signal sLW_Clust_EN   : std_logic;
   signal sLW_Event_Accepted : std_logic;
+  signal sLW_Calib_Type : std_logic_vector(1 downto 0);
 
   -- CLUSTERING
   signal sClust_Read_Addr   : std_logic_vector((ceil_log2(cTOTAL_ADCS * cADC_CHANNELS))-1 downto 0);
@@ -118,11 +153,12 @@ architecture std of DetectorInterface is
   signal sLane_Sel          : natural range 0 to cTOTAL_ADCS-1;
   signal sClust_Write_Data  : std_logic_vector(cADC_DATA_WIDTH downto 0);
   signal sClust_Write_En    : std_logic;
+  signal sClust_Start       : std_logic;
   signal sClust_Full        : std_logic;
   signal sClust_Busy        : std_logic;
   signal sClust_Data_MSB    : std_logic_vector(cADC_DATA_WIDTH-1 downto 0);
   signal sClust_HalfFull    : std_logic;
-  signal sMixed_Word_Count  : natural range 0 to cLW_EVENT_WORDS-1;
+  signal sCluster_Word_Count : natural range 0 to (2*cLW_EVENT_WORDS)-1;
   -- Soglie LANE selezionata per il clustering
   signal sClust_HT          : std_logic_vector(cADC_DATA_WIDTH-1 downto 0);
   signal sClust_LT          : std_logic_vector(cADC_DATA_WIDTH-1 downto 0);
@@ -136,7 +172,7 @@ begin
   sCntIn.slwEn  <= '0';
 
   oCNT.busy  <= sCntOut.busy or sTrigDelBusy or sExtendBusy or
-                sClust_Busy or sMixed_Packet_Busy;
+                sClust_Busy or sPacket_Busy;
   oCNT.error <= sCntOut.error;
   oCNT.reset <= sCntOut.reset;
   oCNT.compl <= sCntOut.compl;
@@ -145,20 +181,29 @@ begin
   --sCalTrigEn <= iMSD_CONFIG.cfgPlane(14); --Used only in FOOT
   sHpCfg     <= iMSD_CONFIG.cfgPlane(11 downto 0);
 
-  sMixed_Packet_Busy <= '1' when sLW_Output_State /= RAW_OUTPUT else '0';
-  -- Metadata emesso solo quando il payload entra nella FIFO
-  oPACKET_VALID <= sPacket_Valid_LW when iSWITCH(2) = '1' else iTRIG;
-  oMIXED_EVENT  <= sPacket_Mixed_LW when iSWITCH(2) = '1' else '0';
+  -- SW(3 downto 2): 00 Legacy, 01 Raw, 10 Compressed, 11 Mixed. Invertito rispetto a com'è la box in LAB
+  sUse_LadderWrapper <= '0' when iSWITCH(3 downto 2) = cMODE_LEGACY else '1';
+  sPacket_Busy <= '1' when sLW_Output_State /= RAW_OUTPUT else '0';
+
+  -- In Legacy i metadati restano legati al trigger e usa la lunghezza configurata in TdaqModule. Il LadderWrapper pubblica metadata solo
+  -- dopo EOP (o dopo il troncamento se c'è), quando la lunghezza reale è nota.
+  oPACKET_VALID  <= sPacket_Valid_LW when sUse_LadderWrapper = '1' else iTRIG;
+  oPAYLOAD_WORDS <= sPayload_Words_LW when sUse_LadderWrapper = '1' else (others => '0');
+  oTRIG_TYPE     <= sTrig_Type_LW when sUse_LadderWrapper = '1' else
+                    cTRIG_TYPE_LEGACY;
   -- Durante il troncamento i cluster rimanenti sono eliminati in locale, non si risponde al full
   sClust_Full <= iFASTDATA_AFULL when sLW_Output_State = CLUSTER_OUTPUT else '0';
+  sClust_Start <= sLW_Clust_EN and sNormal_Event_Armed when sEvent_Mode = cMODE_COMPRESSED or sEvent_Mode = cMODE_MIXED else '0';
 
   -- MULTIPLEXER FAST DATA
-  oFASTDATA_DATA  <= sFastData_Data_LW when iSWITCH(2) = '1' else sFastData_Data_PE;
-  oFASTDATA_WE  <= sFastData_WE_LW when iSWITCH(2) = '1' else sFastData_WE_PE;
+  oFASTDATA_DATA <= sFastData_Data_LW when sUse_LadderWrapper = '1' else
+                    sFastData_Data_PE;
+  oFASTDATA_WE   <= sFastData_WE_LW when sUse_LadderWrapper = '1' else
+                    sFastData_WE_PE;
 
 
   oLED(2)  <= sFastData_WE_LW;
-  oLED(3)  <= iSWITCH(2);
+  oLED(3)  <= sUse_LadderWrapper;
 
   --!@brief Delay the external trigger before the FE start
   TRIG_DELAY : delay_timer
@@ -269,81 +314,110 @@ begin
     end process GEN_LW_PUTD;
 
     LW_FASTDATA_PACK : process(iCLK)
+      variable vClusterWordLimit : positive;
+      variable vPayloadWords     : natural;
     begin
       if rising_edge(iCLK) then
         if iRST = '1' then
-          sFastData_Data_LW     <= (others => '0');
-          sFastData_WE_LW       <= '0';
-          sFastData_Data_LW_LSB <= (others => '0');
-          sFastData_LW_HalfFull <= '0';
-          sLW_Output_State      <= RAW_OUTPUT;
-          sMixed_Event_Armed    <= '0';
-          sClust_Data_MSB       <= (others => '0');
-          sClust_HalfFull       <= '0';
-          sMixed_Word_Count     <= 0;
-          sPacket_Valid_LW      <= '0';
-          sPacket_Mixed_LW      <= '0';
+          sFastData_Data_LW      <= (others => '0');
+          sFastData_WE_LW        <= '0';
+          sFastData_Data_LW_LSB  <= (others => '0');
+          sFastData_LW_HalfFull  <= '0';
+          sLW_Output_State       <= RAW_OUTPUT;
+          sNormal_Event_Armed    <= '0';
+          sEvent_Mode            <= cMODE_LEGACY;
+          sClust_Data_MSB        <= (others => '0');
+          sClust_HalfFull        <= '0';
+          sCluster_Word_Count    <= 0;
+          sPacket_Valid_LW       <= '0';
+          sPayload_Words_LW      <= (others => '0');
+          sTrig_Type_LW          <= (others => '0');
+          sCalib_Packet_Type     <= cTRIG_TYPE_PEDESTAL;
           sRaw_Packet_Word_Count <= 0;
         else
-          sFastData_WE_LW <= '0';
+          sFastData_WE_LW  <= '0';
           sPacket_Valid_LW <= '0';
-          sPacket_Mixed_LW <= '0';
+
+          -- La mode è salvata sul trigger accettato: i dati RAW arrivano molto più tardi e non devono dipendere da cambi degli switch
+          if sLW_Event_Accepted = '1' and sUse_LadderWrapper = '1' then
+            sEvent_Mode         <= iSWITCH(3 downto 2);
+            sNormal_Event_Armed <= '1';
+          end if;
 
           case sLW_Output_State is
             when RAW_OUTPUT =>
-              -- La modalità MIXED viene attivata solo per un evento normale
-              -- I trigger di calibrazione non la attivano
-              if sLW_Event_Accepted = '1' and iSWITCH(2) = '1' and iSWITCH(3) = '1' then
-                sMixed_Event_Armed <= '1';
-              end if;
-
               if sFastData_WE_LW_RAW = '1' then
                 if sFastData_LW_HalfFull = '0' then
                   sFastData_Data_LW_LSB <= sFastData_Data_LW_RAW;
                   sFastData_LW_HalfFull <= '1';
                 else
-                  sFastData_Data_LW <= sFastData_Data_LW_LSB & sFastData_Data_LW_RAW;
-                  sFastData_WE_LW   <= '1';
                   sFastData_LW_HalfFull <= '0';
 
-                  -- Ogni blocco RAW apre un solo metadata per il pacchetto
-                  -- Il contatore separa anche le quattro tabelle (ped, sigraw, sig, flg) di calibrazione
-                  if sRaw_Packet_Word_Count = 0 then
-                    sPacket_Valid_LW <= '1';
-                    sPacket_Mixed_LW <= sMixed_Event_Armed;
+                  -- In Compressed la RAW alimenta soltanto Event RAM, non le FIFO. In Raw, Mixed e nelle tabelle di calibrazione viene inoltrata.
+                  if not (sNormal_Event_Armed = '1' and sEvent_Mode = cMODE_COMPRESSED) then
+                    sFastData_Data_LW <= sFastData_Data_LW_LSB & sFastData_Data_LW_RAW;
+                    sFastData_WE_LW <= '1';
+                  end if;
+
+                  -- Il tipo di tabella calibrazione viene campionato all'inizio: sCWState puè avanzare mentre l'ultima parola attraversa i registri di LadderWrapper.
+                  if sRaw_Packet_Word_Count = 0 and sNormal_Event_Armed = '0' then
+                    sCalib_Packet_Type <= fCalibTrigType(sLW_Calib_Type);
                   end if;
 
                   if sRaw_Packet_Word_Count = cLW_EVENT_WORDS-1 then
                     sRaw_Packet_Word_Count <= 0;
+
+                    if sNormal_Event_Armed = '1' then
+                      if sEvent_Mode = cMODE_RAW then
+                        sPayload_Words_LW <= std_logic_vector(to_unsigned(cLW_EVENT_WORDS, cREG_WIDTH));
+                        sTrig_Type_LW       <= cTRIG_TYPE_RAW;
+                        sPacket_Valid_LW    <= '1';
+                        sNormal_Event_Armed <= '0';
+                      end if;
+                    else
+                      -- PED, SIGRAW, SIG e FLG hanno tutte dimensione RAW fisse
+                      sPayload_Words_LW <= std_logic_vector(to_unsigned(cLW_EVENT_WORDS, cREG_WIDTH));
+                      sTrig_Type_LW    <= sCalib_Packet_Type;
+                      sPacket_Valid_LW <= '1';
+                    end if;
                   else
-                    sRaw_Packet_Word_Count <= sRaw_Packet_Word_Count + 1;
+                    sRaw_Packet_Word_Count <=
+                      sRaw_Packet_Word_Count + 1;
                   end if;
                 end if;
               end if;
 
-              -- Il cambio di stato preserva la parola RAW finale
-              -- Lo stream compresso inizia al clk successivo
-              if sLW_Clust_EN = '1' and sMixed_Event_Armed = '1' then
-                sLW_Output_State  <= CLUSTER_OUTPUT;
-                sClust_HalfFull   <= '0';
-                sMixed_Word_Count <= 0;
+              -- La RAW finale e l'abilitazione possono accadere contemporaneamente nello stesso CLK. Il dato RAW viene quindi gestito
+              -- sopra prima di passare allo stream compresso
+              if sLW_Clust_EN = '1' and sNormal_Event_Armed = '1' and (sEvent_Mode = cMODE_COMPRESSED or sEvent_Mode = cMODE_MIXED) then
+                sLW_Output_State    <= CLUSTER_OUTPUT;
+                sClust_HalfFull     <= '0';
+                sCluster_Word_Count <= 0;
               end if;
 
             when CLUSTER_OUTPUT =>
+              vClusterWordLimit := fClusterWordLimit(sEvent_Mode);
+
               if sClust_Write_En = '1' then
                 if sClust_HalfFull = '0' then
                   if sClust_Write_Data(cADC_DATA_WIDTH) = '1' then
-                    -- Gestione numero dispari di parole. EOP occupa la metà superiore
+                    -- EOP dispari (ossia nella prima metà): resta soltanto la mezza parola necessaria
+                    -- all'allineamento della FIFO a 32 bit, non è un padding a dimensione massima
                     sFastData_Data_LW <= sClust_Write_Data(cADC_DATA_WIDTH-1 downto 0) & std_logic_vector(to_unsigned(0, cADC_DATA_WIDTH));
                     sFastData_WE_LW <= '1';
 
-                    if sMixed_Word_Count = cLW_EVENT_WORDS-1 then
-                      sLW_Output_State   <= DISCARD_OUTPUT;
-                      sMixed_Event_Armed <= '0';
+                    vPayloadWords := sCluster_Word_Count + 1;
+                    if sEvent_Mode = cMODE_MIXED then
+                      vPayloadWords := vPayloadWords + cLW_EVENT_WORDS;
+                      sTrig_Type_LW <= cTRIG_TYPE_MIXED;
                     else
-                      sMixed_Word_Count <= sMixed_Word_Count + 1;
-                      sLW_Output_State  <= PAD_OUTPUT;
+                      sTrig_Type_LW <= cTRIG_TYPE_COMPRESSED;
                     end if;
+
+                    sPayload_Words_LW <= std_logic_vector(to_unsigned(vPayloadWords, cREG_WIDTH));
+                    sPacket_Valid_LW    <= '1';
+                    sNormal_Event_Armed <= '0';
+                    sLW_Output_State    <= DISCARD_OUTPUT;
                   else
                     sClust_Data_MSB <=
                       sClust_Write_Data(cADC_DATA_WIDTH-1 downto 0);
@@ -356,42 +430,38 @@ begin
                   sFastData_WE_LW <= '1';
                   sClust_HalfFull <= '0';
 
-                  if sMixed_Word_Count = cLW_EVENT_WORDS-1 then
-                    -- Uno stream compresso più lungo del payload RAW ammesso viene troncato
-                    sLW_Output_State   <= DISCARD_OUTPUT;
-                    sMixed_Event_Armed <= '0';
-                  else
-                    sMixed_Word_Count <= sMixed_Word_Count + 1;
-                    if sClust_Write_Data(cADC_DATA_WIDTH) = '1' then
-                      sLW_Output_State <= PAD_OUTPUT;
+                  -- La parola corrente chiude il payload sull'EOP oppure sul limite: 2 RAW complessive sia per Compressed sia per Mixed
+                  if sClust_Write_Data(cADC_DATA_WIDTH) = '1' or
+                     sCluster_Word_Count = vClusterWordLimit-1 then
+                    vPayloadWords := sCluster_Word_Count + 1;
+                    if sEvent_Mode = cMODE_MIXED then
+                      vPayloadWords := vPayloadWords + cLW_EVENT_WORDS;
+                      sTrig_Type_LW <= cTRIG_TYPE_MIXED;
+                    else
+                      sTrig_Type_LW <= cTRIG_TYPE_COMPRESSED;
                     end if;
+
+                    sPayload_Words_LW <= std_logic_vector(
+                      to_unsigned(vPayloadWords, cREG_WIDTH));
+                    sPacket_Valid_LW    <= '1';
+                    sNormal_Event_Armed <= '0';
+                    sLW_Output_State    <= DISCARD_OUTPUT;
+                  else
+                    sCluster_Word_Count <= sCluster_Word_Count + 1;
                   end if;
                 end if;
               end if;
 
-            when PAD_OUTPUT =>
-              if iFASTDATA_AFULL = '0' then
-                sFastData_Data_LW <= (others => '0');
-                sFastData_WE_LW   <= '1';
-
-                if sMixed_Word_Count = cLW_EVENT_WORDS-1 then
-                  sLW_Output_State   <= DISCARD_OUTPUT;
-                  sMixed_Event_Armed <= '0';
-                else
-                  sMixed_Word_Count <= sMixed_Word_Count + 1;
-                end if;
-              end if;
-
             when DISCARD_OUTPUT =>
-              -- Dopo un troncamento ClusterModule deve raggiungere EOP
-              -- Il nuovo evento attende la discesa del busy
+              -- Dopo EOP o troncamento ClusterModule viene lasciato scaricare localmente, senza rispondere ad iFULL. Nessun'altra parola entra nella FIFO fastdata.
               if sClust_Busy = '0' then
                 sLW_Output_State <= RAW_OUTPUT;
+                sClust_HalfFull  <= '0';
               end if;
 
             when others =>
-              sLW_Output_State   <= RAW_OUTPUT;
-              sMixed_Event_Armed <= '0';
+              sLW_Output_State    <= RAW_OUTPUT;
+              sNormal_Event_Armed <= '0';
           end case;
         end if;
       end if;
@@ -419,6 +489,7 @@ begin
         oCLUST_ENABLE  => sLW_Clust_EN,
         oVALID_EVT_RAM => sLW_Valid_ER,
         oEVENT_ACCEPTED => sLW_Event_Accepted,
+        oCALIB_TYPE    => sLW_Calib_Type,
         iCAL_ENABLE    => iSWITCH(0),
         iEVT_ENABLE    => iSWITCH(1),
         iTHR_VALID     => '1', -- iSWITCH(3)
@@ -503,7 +574,7 @@ begin
 
       -- ClusterModule parte solo dopo il completamento di un evento normale
       -- I trigger di calibrazione non possono avviare il clustering
-      -- Lo stream a 16 bit viene completato fino alla lunghezza del payload RAW
+      -- Lo stream termina all'EOP senza padding e viene troncato al limite.
       CLUST : ClusterModule
         generic map(
           pADC_NUM     => cTOTAL_ADCS,
@@ -514,7 +585,7 @@ begin
         port map(
           iCLK     => iCLK,
           iRST     => iRST,
-          iTRIG    => sLW_Clust_EN and sMixed_Event_Armed,
+          iTRIG    => sClust_Start,
           iRD_DATA => sClust_Read_Data,
           oRD_ADDR => sClust_Read_Addr,
           oRD_EN   => sClust_Read_En,
