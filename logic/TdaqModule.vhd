@@ -28,8 +28,10 @@ entity TdaqModule is
     iEXT_TS             : in  std_logic_vector(63 downto 0);  --!External timestamp
     --Trigger and Busy logic
     iEXT_TRIG           : in  std_logic;
+    iTRIG_ENABLE        : in  std_logic;
     oTRIG               : out std_logic;
     oBUSY               : out std_logic;
+    oDATA_IDLE          : out std_logic;
     iTRG_BUSIES_AND     : in  std_logic_vector(7 downto 0);
     iTRG_BUSIES_OR      : in  std_logic_vector(7 downto 0);
     --FastDATA-Detector interface
@@ -118,7 +120,7 @@ architecture std of TdaqModule is
 
 begin
   -- Register Array assignments
-  sTrigEn                 <= sRegArray(rGOTO_STATE)(4);
+  sTrigEn                 <= iTRIG_ENABLE; -- Gli passo il trig_enable da esterno invece di sRegArray(rGOTO_STATE)(4);
   --
   sF2hFastCnt.en          <= sRegArray(rUNITS_EN)(0);
   sF2hFastCnt.start       <= sRegArray(rUNITS_EN)(0);
@@ -183,6 +185,14 @@ begin
   oREG_ARRAY <= sRegArray;
   oBUSY      <= sBusy;
   oTRIG      <= sTrig;
+  oDATA_IDLE <= '1' when sFdiFifoOut.empty = '1' and    -- Fifo vuota
+                           sMetaDataEmpty = '1' and     -- Fifo metadati vuota
+                           sF2hFastBusy = '0' and       -- FastData non è busy
+                           sMetaDataWr = '0' and        -- Non sto scrivendo metadati
+                           sMetaDataWrRe = '0' and      -- Non c'è fronte scrittura metadati pending
+                           iPACKET_VALID = '0' and      -- Non c'è un pacchetto valido da DetectorInterface
+                           sFdiFifoIn.wr = '0' else     -- Non è in corso scrittura in fastData
+                '0';
 
   --!@brief FPGA-HPS communication interfaces
   --!@todo connect sF2hFastBusy to the trigBusyLogic

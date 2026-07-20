@@ -50,21 +50,22 @@ package paperoPackage is
   constant rADC_CLK_PARAM  : natural := 6;
   constant rMSD_PARAM      : natural := 7;
   constant rBUSYADC_PARAM  : natural := 8;
-  constant rTHR_PARAM      : natural := 9; -- Registro dedicato alle threshold. Qui carico HTH|LTH
+  constant rTHR_PARAM      : natural := 11; -- Registro dedicato alle threshold. Qui carico HTH|LTH
 
   -- Register 0 command bits
-  constant cEVENT_ENABLE_BIT : natural := 16;
-  constant cTHR_VALID_BIT    : natural := 18;
-  constant cDAQ_MODE_LSB     : natural := 24;
-  constant cDAQ_MODE_MSB     : natural := 25;
-  constant cCMD_TOGGLE_BIT   : natural := 31;
+  constant cRUN_REQUEST_BIT   : natural := 4;
+  constant cEVENT_ENABLE_BIT  : natural := 16;
+  constant cNEW_CALIB_BIT     : natural := 17;
+  constant cTHR_VALID_BIT     : natural := 18;
+  constant cDAQ_MODE_LSB      : natural := 24;
+  constant cDAQ_MODE_MSB      : natural := 25;
   --!Register array HPS-RW, FPGA-R
   type tHpsRegArray is array (0 to cHPS_REGISTERS-1) of
     std_logic_vector(cREG_WIDTH-1 downto 0);
   constant cHPS_REG_NULL : tHpsRegArray := (
     x"00000000", x"00000001", x"02faf080", x"000000FF",
     x"0000028A", cFE_CLK_DUTY & cFE_CLK_DIV, cADC_CLK_DUTY & cADC_CLK_DIV , cCFG_PLANE & cTRG2HOLD,
-    cBUSY_LEN & cADC_DELAY, cHTH & cLTH, x"00000000", x"00000000",
+    cBUSY_LEN & cADC_DELAY, x"00000000", x"00000000", cHTH & cLTH,
     x"00000000", x"00000000", x"00000000", x"00000000"
     );                                  --!Null vector for HPS register array
 
@@ -461,8 +462,10 @@ package paperoPackage is
       iEXT_TS             : in  std_logic_vector(63 downto 0);
       --# {{TrigBusy|TrigBusy}}
       iEXT_TRIG           : in  std_logic;
+      iTRIG_ENABLE        : in  std_logic;
       oTRIG               : out std_logic;
       oBUSY               : out std_logic;
+      oDATA_IDLE          : out std_logic;
       iTRG_BUSIES_AND     : in  std_logic_vector(7 downto 0);
       iTRG_BUSIES_OR      : in  std_logic_vector(7 downto 0);
       --# {{FastDATA-Detector interface|FastDATA-Detector interface}}

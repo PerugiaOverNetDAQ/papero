@@ -159,6 +159,17 @@ end entity top_papero;
 
 --!@copydoc top_papero.vhd
 architecture std of top_papero is
+  constant cCAL_REQUEST_ARM_CYCLES : positive := 4;
+
+  type tRunState is (
+    RUN_IDLE,
+    RUN_EVENTS,
+    RUN_CAL_ARM,
+    RUN_CALIBRATION,
+    RUN_CAL_DRAIN,
+    RUN_WAIT_STOP
+  );
+
   --HPS signals
   signal hps_fpga_reset_n       : std_logic;
   signal fpga_debounced_buttons : std_logic_vector(1 downto 0);
@@ -253,14 +264,21 @@ architecture std of top_papero is
   signal sCountersRst   : std_logic;
   signal sRegArrayRst   : std_logic;
   signal sRunMode       : std_logic;
-  signal sCmdPrev       : std_logic;
+  signal sStartPrev     : std_logic;
   signal sThrConfigured : std_logic;
   signal sThrApplyPending : std_logic;
   signal sThrValid      : std_logic;
   signal sLTH           : std_logic_vector(cADC_DATA_WIDTH-1 downto 0);
   signal sHTH           : std_logic_vector(cADC_DATA_WIDTH-1 downto 0);
   signal sDaqMode       : std_logic_vector(1 downto 0);
+  signal sDetectorDaqMode : std_logic_vector(1 downto 0);
   signal sEventEnable   : std_logic;
+  signal sCommandHold   : std_logic;
+  signal sTdaqDataIdle  : std_logic;
+  signal sCalEnable     : std_logic;
+  signal sCalibrationRun : std_logic;
+  signal sCalArmCounter : natural range 0 to cCAL_REQUEST_ARM_CYCLES-1;
+  signal sRunState      : tRunState;
 
   signal sMultiAdcSynch : tMultiAdc2FpgaIntf;
   signal sBcoClkSynch   : std_logic;
@@ -567,7 +585,12 @@ begin
 
   --!@brief Wrapper for all of the Trigger and Data Acquisition modules
   sTrgBusiesAnd   <= (others => '0');
-  sTrgBusiesOr    <= (0 => sDetIntfCntOut.busy, 1 => sDetIntfAfull, others => '0');
+  -- Blocca temporaneamente nuovi trigger tramite la normale catena dei busy,
+  -- senza resettare la FIFO metadati
+  sTrgBusiesOr    <= (0 => sDetIntfCntOut.busy,
+                      1 => sDetIntfAfull,
+                      2 => sCommandHold,
+                      others => '0');
   TdaqModule_i : TdaqModule
     generic map (
       pFDI_WIDTH => cFDI_WIDTH,
@@ -585,8 +608,10 @@ begin
       iEXT_TS             => sExtTsCount,
       --
       iEXT_TRIG           => sExtTrigSynch,
+      iTRIG_ENABLE        => sRunMode,
       oTRIG               => sMainTrig,
       oBUSY               => sMainBusy,
+      oDATA_IDLE          => sTdaqDataIdle,
       iTRG_BUSIES_AND     => sTrgBusiesAnd,
       iTRG_BUSIES_OR      => sTrgBusiesOr,
       --
@@ -649,7 +674,6 @@ begin
       signal_in => sRegArray(rGOTO_STATE)(2),
       pulse_out => sRegArrayRst
       );
-  sRunMode                 <= sRegArray(rGOTO_STATE)(4);
   sDetIntfEn               <= not sRegArray(rUNITS_EN)(1);
   sDetIntfCfg.feClkDuty    <= sRegArray(rFE_CLK_PARAM)(31 downto 16);
   sDetIntfCfg.feClkDiv     <= sRegArray(rFE_CLK_PARAM)(15 downto 0);
@@ -664,49 +688,155 @@ begin
   -- Metto valid a 1 se è stato ricevuto almeno un comando valido di configurazione soglie. O se sono stati resettati i registri.
   sThrValid <= sThrConfigured or sThrApplyPending;
 
+  -- Forza LW come path di uscita dati se calibrationRun è ad 1. Potevo impostare anche 10 o 11. Basta non LEG 00
+  sDetectorDaqMode <= "01" when sCalibrationRun = '1' else sDaqMode;
+
   REGISTER_COMMAND_PROC : process(sClk)
   begin
     if rising_edge(sClk) then
-      -- Reset globale HPS (negato) 
       if hps_fpga_reset_n_synch = '0' then
-        sCmdPrev   <= '0'; -- Copia locale del reg(31)(0)
-        sThrConfigured   <= '0'; -- Soglie non configurate
-        sThrApplyPending <= '0'; -- Cancella richieste pending soglie
-        sLTH              <= cLTH;
-        sHTH              <= cHTH;
-        sDaqMode          <= "00"; -- Metto la modalità DAQ in legacy per def. LEG|00 RAW|01 COMP|10 MIX|11
-        sEventEnable      <= '0'; -- Disabilito EVT LW
+        sStartPrev       <= '0'; -- Stato precedente del bit START
+        sThrConfigured   <= '0'; -- Nessuna soglia ricevuta da comando
+        sThrApplyPending <= '0'; -- Nessuna applicazione soglie pendente
+        sLTH             <= cLTH; -- Soglia bassa predefinita
+        sHTH             <= cHTH; -- Soglia alta predefinita
+        sDaqMode         <= "00"; -- Modalità DAQ legacy
+        sEventEnable     <= '0'; -- Eventi disabilitati
+        sRunMode         <= '0'; -- Trigger disabilitati e FIFO metadati in reset
+        sCommandHold     <= '0'; -- Nessun busy aggiuntivo
+        sCalEnable       <= '0'; -- Nessuna richiesta di calibrazione
+        sCalibrationRun  <= '0'; -- Calibrazione non attiva
+        sCalArmCounter   <= 0; -- Contatore di arm azzerato
+        sRunState        <= RUN_IDLE; -- Comando non attivo
+      elsif sRegArrayRst = '1' then
+        sStartPrev       <= '0'; 
+        sThrConfigured   <= '0'; 
+        sThrApplyPending <= '1'; -- Riapplica una volta le soglie predefinite a LadderWrapper
+        sLTH             <= cLTH; 
+        sHTH             <= cHTH;
+        sDaqMode         <= "00";
+        sEventEnable     <= '0'; 
+        sRunMode         <= '0'; 
+        sCommandHold     <= '0'; 
+        sCalEnable       <= '0'; 
+        sCalibrationRun  <= '0'; 
+        sCalArmCounter   <= 0; 
+        sRunState        <= RUN_IDLE; 
       else
-        if sRegArrayRst = '1' then
-          sCmdPrev   <= '0'; 
-          sThrConfigured   <= '0';
-          sThrApplyPending <= '1'; -- Richiede l’applicazione dei valori di default. Provota sThrValid sopra con soglie di base.
-          sLTH              <= cLTH;
-          sHTH              <= cHTH;
-          sDaqMode          <= "00";
-          sEventEnable      <= '0';
+        sCalEnable <= '0'; 
+
+        if sThrApplyPending = '1' then
+          sThrApplyPending <= '0';
+        end if;
+
+        if sRegArray(rGOTO_STATE)(cRUN_REQUEST_BIT) = '0' then
+          -- STOP: termina immediatamente il comando attivo
+          sStartPrev      <= '0';
+          sRunMode        <= '0';
+          sCommandHold    <= '0';
+          sCalibrationRun <= '0';
+          sCalArmCounter  <= 0;
+          sRunState       <= RUN_IDLE;
+
+        elsif sStartPrev = '0' then
+          -- START: campiona la configurazione del comando
+          sStartPrev   <= '1';
+          -- DAQ MODE
+          sDaqMode     <= sRegArray(rGOTO_STATE)(cDAQ_MODE_MSB downto cDAQ_MODE_LSB); 
+          -- EVT EN LW. In LEGACY MODE ESCONO UGUALE
+          sEventEnable <= sRegArray(rGOTO_STATE)(cEVENT_ENABLE_BIT);
+          sRunMode     <= '1';
+          sCalArmCounter <= 0;
+
+          -- Carica le TH
+          if sRegArray(rGOTO_STATE)(cTHR_VALID_BIT) = '1' then
+            sLTH <= sRegArray(rTHR_PARAM)(15 downto 0);
+            sHTH <= sRegArray(rTHR_PARAM)(31 downto 16);
+            sThrConfigured <= '1';
+          end if;
+
+          -- La calibrazione ha priorità sugli eventi e parte dopo la finestra di delay arm
+          if sRegArray(rGOTO_STATE)(cNEW_CALIB_BIT) = '1' then
+            sCommandHold    <= '1';
+            sCalEnable      <= '1';
+            sCalibrationRun <= '1';
+            sRunState       <= RUN_CAL_ARM;
+
+          -- Nessuna calibrazione: avvia direttamente gli eventi richiesti.
+          elsif sRegArray(rGOTO_STATE)(cEVENT_ENABLE_BIT) = '1' then
+            sCommandHold    <= '0';
+            sCalibrationRun <= '0';
+            sRunState       <= RUN_EVENTS;
+          -- Comando attivo senza calibrazione o eventi: attende solamente STOP.
+          else
+            sCommandHold    <= '1';
+            sCalibrationRun <= '0';
+            sRunState       <= RUN_WAIT_STOP;
+          end if;
+
         else
-          -- Se c'è una richiesta pending, la porto a 0. Dopo il sRegArrayRst = '1'.
-          -- Così non la ripeto più volte
-          if sThrApplyPending = '1' then
-            sThrApplyPending <= '0';
-          end if;
+          -- START '1': exec comando su rising edge
+          case sRunState is
+            when RUN_IDLE =>
+              sRunMode        <= '0';
+              sCommandHold    <= '0';
+              sCalibrationRun <= '0';
 
-          -- Controllo il bit 31 del registro 0 e se è diverso da prev
-          -- Quindi in pratica su falling edge o rising edge di quel bit
-          if sRegArray(rGOTO_STATE)(cCMD_TOGGLE_BIT) /= sCmdPrev then
-            sCmdPrev <= sRegArray(rGOTO_STATE)(cCMD_TOGGLE_BIT);
-            sDaqMode <= sRegArray(rGOTO_STATE)(cDAQ_MODE_MSB downto cDAQ_MODE_LSB); -- Carico la configurazione del reg(0)(25|24)
-            sEventEnable <= sRegArray(rGOTO_STATE)(cEVENT_ENABLE_BIT); -- Carico la configurazione del reg(0)(16)
+            when RUN_EVENTS =>
+              sRunMode        <= '1'; -- Continua l'acquisizione fino a STOP.
+              sCommandHold    <= '0'; -- Consente nuovi trigger.
+              sCalibrationRun <= '0';
 
-            -- Se in un cambio del bit di controllo 31 rilevo il bit 18 ad 1, ossia THR_VALID, allora aggiorno le soglie
-            -- Le carico poi in LW con sThrConfig ad 1 in combinatorio sopra
-            if sRegArray(rGOTO_STATE)(cTHR_VALID_BIT) = '1' then
-              sLTH            <= sRegArray(rTHR_PARAM)(15 downto 0);
-              sHTH            <= sRegArray(rTHR_PARAM)(31 downto 16);
-              sThrConfigured <= '1';
-            end if;
-          end if;
+            when RUN_CAL_ARM =>
+              sRunMode        <= '1';
+              sCommandHold    <= '1'; -- Non genera trigger prima che CAL_ENABLE si sia propagato.
+              sCalibrationRun <= '1';
+              if sCalArmCounter = cCAL_REQUEST_ARM_CYCLES-1 then
+                sCommandHold <= '0';
+                sRunState    <= RUN_CALIBRATION;
+              else
+                sCalArmCounter <= sCalArmCounter + 1;
+              end if;
+
+            when RUN_CALIBRATION =>
+              sRunMode        <= '1';
+              sCommandHold    <= '0'; -- Permette i trigger necessari agli step di calibrazione
+              sCalibrationRun <= '1';
+
+              -- Il FLAG è l'ultima tabella: blocca altri trigger
+              if sPacketValid = '1' and sPacketTrigType = cTRIG_TYPE_FLAG then
+                sCommandHold <= '1'; 
+                sRunState    <= RUN_CAL_DRAIN;
+              end if;
+
+            when RUN_CAL_DRAIN =>
+              sRunMode        <= '1'; -- Mantiene valida la FIFO metadati durante il drenaggio
+              sCommandHold    <= '1'; -- Non accetta nuovi trigger
+              sCalibrationRun <= '1';
+
+              -- oDATA_IDLE di TDAQ
+              if sTdaqDataIdle = '1' then
+                sCalibrationRun <= '0';
+                if sEventEnable = '1' then
+                  sCommandHold <= '0';
+                  sRunState    <= RUN_EVENTS;
+                else
+                  sCommandHold <= '1';
+                  sRunState    <= RUN_WAIT_STOP;
+                end if;
+              end if;
+
+            when RUN_WAIT_STOP =>
+              sRunMode        <= '1'; -- Il comando resta attivo finché il software non abbassa START
+              sCommandHold    <= '1'; -- Non sono richiesti altri trigger
+              sCalibrationRun <= '0';
+
+            when others =>
+              sRunMode        <= '0';
+              sCommandHold    <= '0';
+              sCalibrationRun <= '0';
+              sRunState       <= RUN_IDLE;
+          end case;
         end if;
       end if;
     end if;
@@ -736,8 +866,8 @@ begin
       iTHR_VALID      => sThrValid,
       iLTH            => sLTH,
       iHTH            => sHTH,
-      iDAQ_MODE       => sDaqMode,
-      iCAL_ENABLE     => SW(0), -- TODO: Temporary switch calib contro. Will replace with commands.
+      iDAQ_MODE       => sDetectorDaqMode,
+      iCAL_ENABLE     => sCalEnable,
       iEVT_ENABLE     => sEventEnable,
       oLED  => LED(3 downto 0)
       );
