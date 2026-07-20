@@ -44,7 +44,9 @@ entity DetectorInterface is
     iLTH            : in  std_logic_vector(cADC_DATA_WIDTH-1 downto 0);
     iHTH            : in  std_logic_vector(cADC_DATA_WIDTH-1 downto 0);
 
-    iSWITCH         : in std_logic_vector(3 downto 0);
+    iDAQ_MODE       : in  std_logic_vector(1 downto 0);
+    iCAL_ENABLE     : in  std_logic;
+    iEVT_ENABLE     : in  std_logic;
     oLED            : out std_logic_vector(3 downto 0)
     );
 end DetectorInterface;
@@ -54,7 +56,7 @@ architecture std of DetectorInterface is
   -- Numero di parole 32 bit in un payload RAW
   constant cLW_EVENT_WORDS : positive :=
     (cTOTAL_ADCS * cADC_CHANNELS * cADC_DATA_WIDTH) / cREG_WIDTH;
-  constant cMODE_LEGACY     : std_logic_vector(1 downto 0) := "00"; --SW[3:2]
+  constant cMODE_LEGACY     : std_logic_vector(1 downto 0) := "00";
   constant cMODE_RAW        : std_logic_vector(1 downto 0) := "01";
   constant cMODE_COMPRESSED : std_logic_vector(1 downto 0) := "10";
   constant cMODE_MIXED      : std_logic_vector(1 downto 0) := "11";
@@ -184,8 +186,8 @@ begin
   --sCalTrigEn <= iMSD_CONFIG.cfgPlane(14); --Used only in FOOT
   sHpCfg     <= iMSD_CONFIG.cfgPlane(11 downto 0);
 
-  -- SW(3 downto 2): 00 Legacy, 01 Raw, 10 Compressed, 11 Mixed. Invertito rispetto a com'è la box in LAB
-  sUse_LadderWrapper <= '0' when iSWITCH(3 downto 2) = cMODE_LEGACY else '1';
+  -- iACQ_MODE: 00 Legacy, 01 Raw, 10 Compressed, 11 Mixed.
+  sUse_LadderWrapper <= '0' when iDAQ_MODE = cMODE_LEGACY else '1';
   sPacket_Busy <= '1' when sLW_Output_State /= RAW_OUTPUT else '0';
 
   -- In Legacy i metadati restano legati al trigger e usa la lunghezza configurata in TdaqModule. Il LadderWrapper pubblica metadata solo
@@ -341,9 +343,9 @@ begin
           sFastData_WE_LW  <= '0';
           sPacket_Valid_LW <= '0';
 
-          -- La mode è salvata sul trigger accettato: i dati RAW arrivano molto più tardi e non devono dipendere da cambi degli switch
+          -- La mode è salvata sul trigger accettato: i dati RAW arrivano molto più tardi e non devono dipendere da comandi successivi.
           if sLW_Event_Accepted = '1' and sUse_LadderWrapper = '1' then
-            sEvent_Mode         <= iSWITCH(3 downto 2);
+            sEvent_Mode         <= iDAQ_MODE;
             sNormal_Event_Armed <= '1';
           end if;
 
@@ -493,8 +495,8 @@ begin
         oVALID_EVT_RAM => sLW_Valid_ER,
         oEVENT_ACCEPTED => sLW_Event_Accepted,
         oCALIB_TYPE    => sLW_Calib_Type,
-        iCAL_ENABLE    => iSWITCH(0),
-        iEVT_ENABLE    => iSWITCH(1),
+        iCAL_ENABLE    => iCAL_ENABLE,
+        iEVT_ENABLE    => iEVT_ENABLE,
         iTHR_VALID     => iTHR_VALID,
         iK1            => iLTH,
         iK2            => iHTH,

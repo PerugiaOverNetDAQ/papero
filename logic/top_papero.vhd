@@ -259,6 +259,8 @@ architecture std of top_papero is
   signal sThrValid      : std_logic;
   signal sLTH           : std_logic_vector(cADC_DATA_WIDTH-1 downto 0);
   signal sHTH           : std_logic_vector(cADC_DATA_WIDTH-1 downto 0);
+  signal sDaqMode       : std_logic_vector(1 downto 0);
+  signal sEventEnable   : std_logic;
 
   signal sMultiAdcSynch : tMultiAdc2FpgaIntf;
   signal sBcoClkSynch   : std_logic;
@@ -662,7 +664,7 @@ begin
   -- Metto valid a 1 se è stato ricevuto almeno un comando valido di configurazione soglie. O se sono stati resettati i registri.
   sThrValid <= sThrConfigured or sThrApplyPending;
 
-  THRESHOLD_COMMAND_PROC : process(sClk)
+  REGISTER_COMMAND_PROC : process(sClk)
   begin
     if rising_edge(sClk) then
       -- Reset globale HPS (negato) 
@@ -672,6 +674,8 @@ begin
         sThrApplyPending <= '0'; -- Cancella richieste pending soglie
         sLTH              <= cLTH;
         sHTH              <= cHTH;
+        sDaqMode          <= "00"; -- Metto la modalità DAQ in legacy per def. LEG|00 RAW|01 COMP|10 MIX|11
+        sEventEnable      <= '0'; -- Disabilito EVT LW
       else
         if sRegArrayRst = '1' then
           sCmdPrev   <= '0'; 
@@ -679,6 +683,8 @@ begin
           sThrApplyPending <= '1'; -- Richiede l’applicazione dei valori di default. Provota sThrValid sopra con soglie di base.
           sLTH              <= cLTH;
           sHTH              <= cHTH;
+          sDaqMode          <= "00";
+          sEventEnable      <= '0';
         else
           -- Se c'è una richiesta pending, la porto a 0. Dopo il sRegArrayRst = '1'.
           -- Così non la ripeto più volte
@@ -690,6 +696,8 @@ begin
           -- Quindi in pratica su falling edge o rising edge di quel bit
           if sRegArray(rGOTO_STATE)(cCMD_TOGGLE_BIT) /= sCmdPrev then
             sCmdPrev <= sRegArray(rGOTO_STATE)(cCMD_TOGGLE_BIT);
+            sDaqMode <= sRegArray(rGOTO_STATE)(cDAQ_MODE_MSB downto cDAQ_MODE_LSB); -- Carico la configurazione del reg(0)(25|24)
+            sEventEnable <= sRegArray(rGOTO_STATE)(cEVENT_ENABLE_BIT); -- Carico la configurazione del reg(0)(16)
 
             -- Se in un cambio del bit di controllo 31 rilevo il bit 18 ad 1, ossia THR_VALID, allora aggiorno le soglie
             -- Le carico poi in LW con sThrConfig ad 1 in combinatorio sopra
@@ -702,7 +710,7 @@ begin
         end if;
       end if;
     end if;
-  end process THRESHOLD_COMMAND_PROC;
+  end process REGISTER_COMMAND_PROC;
 
   --!@brief Detector interface. **Reset shall be longer than 2 clock cycles**
   --!@todo Connect error, compl flags
@@ -728,7 +736,9 @@ begin
       iTHR_VALID      => sThrValid,
       iLTH            => sLTH,
       iHTH            => sHTH,
-      iSWITCH  => SW,
+      iDAQ_MODE       => sDaqMode,
+      iCAL_ENABLE     => SW(0), -- TODO: Temporary switch calib contro. Will replace with commands.
+      iEVT_ENABLE     => sEventEnable,
       oLED  => LED(3 downto 0)
       );
 

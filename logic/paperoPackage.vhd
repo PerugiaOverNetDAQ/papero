@@ -53,8 +53,11 @@ package paperoPackage is
   constant rTHR_PARAM      : natural := 9; -- Registro dedicato alle threshold. Qui carico HTH|LTH
 
   -- Register 0 command bits
-  constant cTHR_VALID_BIT  : natural := 18;
-  constant cCMD_TOGGLE_BIT : natural := 31;
+  constant cEVENT_ENABLE_BIT : natural := 16;
+  constant cTHR_VALID_BIT    : natural := 18;
+  constant cDAQ_MODE_LSB     : natural := 24;
+  constant cDAQ_MODE_MSB     : natural := 25;
+  constant cCMD_TOGGLE_BIT   : natural := 31;
   --!Register array HPS-RW, FPGA-R
   type tHpsRegArray is array (0 to cHPS_REGISTERS-1) of
     std_logic_vector(cREG_WIDTH-1 downto 0);
@@ -554,7 +557,9 @@ package paperoPackage is
       iTHR_VALID      : in  std_logic;
       iLTH            : in  std_logic_vector(cADC_DATA_WIDTH-1 downto 0);
       iHTH            : in  std_logic_vector(cADC_DATA_WIDTH-1 downto 0);
-      iSWITCH         : in std_logic_vector(3 downto 0);
+      iDAQ_MODE       : in  std_logic_vector(1 downto 0);
+      iCAL_ENABLE     : in  std_logic;
+      iEVT_ENABLE     : in  std_logic;
       oLED            : out std_logic_vector(3 downto 0)
       );
   end component;
