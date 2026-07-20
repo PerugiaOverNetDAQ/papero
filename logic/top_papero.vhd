@@ -253,6 +253,12 @@ architecture std of top_papero is
   signal sCountersRst   : std_logic;
   signal sRegArrayRst   : std_logic;
   signal sRunMode       : std_logic;
+  signal sCmdPrev       : std_logic;
+  signal sThrConfigured : std_logic;
+  signal sThrApplyPending : std_logic;
+  signal sThrValid      : std_logic;
+  signal sLTH           : std_logic_vector(cADC_DATA_WIDTH-1 downto 0);
+  signal sHTH           : std_logic_vector(cADC_DATA_WIDTH-1 downto 0);
 
   signal sMultiAdcSynch : tMultiAdc2FpgaIntf;
   signal sBcoClkSynch   : std_logic;
@@ -652,6 +658,52 @@ begin
   sDetIntfCfg.trg2Hold     <= sRegArray(rMSD_PARAM)(15 downto 0);
   sDetIntfCfg.extendBusy   <= sRegArray(rBUSYADC_PARAM)(31 downto 16);
   sDetIntfCfg.adcDelay     <= sRegArray(rBUSYADC_PARAM)(15 downto 0);
+
+  -- Metto valid a 1 se è stato ricevuto almeno un comando valido di configurazione soglie. O se sono stati resettati i registri.
+  sThrValid <= sThrConfigured or sThrApplyPending;
+
+  THRESHOLD_COMMAND_PROC : process(sClk)
+  begin
+    if rising_edge(sClk) then
+      -- Reset globale HPS (negato) 
+      if hps_fpga_reset_n_synch = '0' then
+        sCmdPrev   <= '0'; -- Copia locale del reg(31)(0)
+        sThrConfigured   <= '0'; -- Soglie non configurate
+        sThrApplyPending <= '0'; -- Cancella richieste pending soglie
+        sLTH              <= cLTH;
+        sHTH              <= cHTH;
+      else
+        if sRegArrayRst = '1' then
+          sCmdPrev   <= '0'; 
+          sThrConfigured   <= '0';
+          sThrApplyPending <= '1'; -- Richiede l’applicazione dei valori di default. Provota sThrValid sopra con soglie di base.
+          sLTH              <= cLTH;
+          sHTH              <= cHTH;
+        else
+          -- Se c'è una richiesta pending, la porto a 0. Dopo il sRegArrayRst = '1'.
+          -- Così non la ripeto più volte
+          if sThrApplyPending = '1' then
+            sThrApplyPending <= '0';
+          end if;
+
+          -- Controllo il bit 31 del registro 0 e se è diverso da prev
+          -- Quindi in pratica su falling edge o rising edge di quel bit
+          if sRegArray(rGOTO_STATE)(cCMD_TOGGLE_BIT) /= sCmdPrev then
+            sCmdPrev <= sRegArray(rGOTO_STATE)(cCMD_TOGGLE_BIT);
+
+            -- Se in un cambio del bit di controllo 31 rilevo il bit 18 ad 1, ossia THR_VALID, allora aggiorno le soglie
+            -- Le carico poi in LW con sThrConfig ad 1 in combinatorio sopra
+            if sRegArray(rGOTO_STATE)(cTHR_VALID_BIT) = '1' then
+              sLTH            <= sRegArray(rTHR_PARAM)(15 downto 0);
+              sHTH            <= sRegArray(rTHR_PARAM)(31 downto 16);
+              sThrConfigured <= '1';
+            end if;
+          end if;
+        end if;
+      end if;
+    end if;
+  end process THRESHOLD_COMMAND_PROC;
+
   --!@brief Detector interface. **Reset shall be longer than 2 clock cycles**
   --!@todo Connect error, compl flags
   MsdInterface : DetectorInterface
@@ -673,6 +725,9 @@ begin
       oPACKET_VALID   => sPacketValid,
       oPAYLOAD_WORDS  => sPayloadWords,
       oTRIG_TYPE      => sPacketTrigType,
+      iTHR_VALID      => sThrValid,
+      iLTH            => sLTH,
+      iHTH            => sHTH,
       iSWITCH  => SW,
       oLED  => LED(3 downto 0)
       );

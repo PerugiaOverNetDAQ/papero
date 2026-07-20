@@ -50,13 +50,18 @@ package paperoPackage is
   constant rADC_CLK_PARAM  : natural := 6;
   constant rMSD_PARAM      : natural := 7;
   constant rBUSYADC_PARAM  : natural := 8;
+  constant rTHR_PARAM      : natural := 9; -- Registro dedicato alle threshold. Qui carico HTH|LTH
+
+  -- Register 0 command bits
+  constant cTHR_VALID_BIT  : natural := 18;
+  constant cCMD_TOGGLE_BIT : natural := 31;
   --!Register array HPS-RW, FPGA-R
   type tHpsRegArray is array (0 to cHPS_REGISTERS-1) of
     std_logic_vector(cREG_WIDTH-1 downto 0);
   constant cHPS_REG_NULL : tHpsRegArray := (
     x"00000000", x"00000001", x"02faf080", x"000000FF",
     x"0000028A", cFE_CLK_DUTY & cFE_CLK_DIV, cADC_CLK_DUTY & cADC_CLK_DIV , cCFG_PLANE & cTRG2HOLD,
-    cBUSY_LEN & cADC_DELAY, x"00000000", x"00000000", x"00000000",
+    cBUSY_LEN & cADC_DELAY, cHTH & cLTH, x"00000000", x"00000000",
     x"00000000", x"00000000", x"00000000", x"00000000"
     );                                  --!Null vector for HPS register array
 
@@ -546,6 +551,9 @@ package paperoPackage is
       oPACKET_VALID   : out std_logic;
       oPAYLOAD_WORDS  : out std_logic_vector(cREG_WIDTH-1 downto 0);
       oTRIG_TYPE      : out std_logic_vector(7 downto 0);
+      iTHR_VALID      : in  std_logic;
+      iLTH            : in  std_logic_vector(cADC_DATA_WIDTH-1 downto 0);
+      iHTH            : in  std_logic_vector(cADC_DATA_WIDTH-1 downto 0);
       iSWITCH         : in std_logic_vector(3 downto 0);
       oLED            : out std_logic_vector(3 downto 0)
       );

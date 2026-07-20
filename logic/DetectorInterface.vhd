@@ -40,6 +40,9 @@ entity DetectorInterface is
     oPACKET_VALID   : out std_logic;    --!Payload descriptor valid
     oPAYLOAD_WORDS  : out std_logic_vector(cREG_WIDTH-1 downto 0);
     oTRIG_TYPE      : out std_logic_vector(7 downto 0);
+    iTHR_VALID      : in  std_logic;
+    iLTH            : in  std_logic_vector(cADC_DATA_WIDTH-1 downto 0);
+    iHTH            : in  std_logic_vector(cADC_DATA_WIDTH-1 downto 0);
 
     iSWITCH         : in std_logic_vector(3 downto 0);
     oLED            : out std_logic_vector(3 downto 0)
@@ -492,9 +495,9 @@ begin
         oCALIB_TYPE    => sLW_Calib_Type,
         iCAL_ENABLE    => iSWITCH(0),
         iEVT_ENABLE    => iSWITCH(1),
-        iTHR_VALID     => '1', -- iSWITCH(3)
-        iK1            => cLTH,
-        iK2            => cHTH,
+        iTHR_VALID     => iTHR_VALID,
+        iK1            => iLTH,
+        iK2            => iHTH,
         oBUSY          => oLED(0),
         oER_WE         => sFastData_WE_LW_RAW,
         oER_W_ADDR     => sFastData_ADDR_LW_RAW,
