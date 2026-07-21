@@ -29,6 +29,9 @@ entity TdaqModule is
     --Trigger and Busy logic
     iEXT_TRIG           : in  std_logic;
     iTRIG_ENABLE        : in  std_logic;
+    iCALIBRATION_ACTIVE : in  std_logic;
+    iCALIB_VALID        : in  std_logic;
+    iRUN_IDLE           : in  std_logic;
     oTRIG               : out std_logic;
     oBUSY               : out std_logic;
     oDATA_IDLE          : out std_logic;
@@ -117,6 +120,7 @@ architecture std of TdaqModule is
   signal sPendingTrigId  : std_logic_vector(15 downto 0);
   signal sPendingIntTime : std_logic_vector(63 downto 0);
   signal sPendingExtTime : std_logic_vector(63 downto 0);
+  signal sPendingValid   : std_logic;
 
 begin
   -- Register Array assignments
@@ -129,22 +133,27 @@ begin
   sHkRdrCnt.start         <= sRegArray(rUNITS_EN)(5);
   sHkRdrCnt.en            <= sRegArray(rUNITS_EN)(6);
   sTestUnitCfg            <= sRegArray(rUNITS_EN)(9 downto 8);
-  --
-  sTrigCfg                <= sRegArray(rTRIGBUSY_LOGIC);
+
+  -- Carico in trigCfg la configurazione del trigger
+  -- bit1: 1 | triggerFisico || 0 | triggerCalib
+  -- bit0: 0 | esterno || 1 | interno
+  sTrigCfg <= sRegArray(rTRIGBUSY_LOGIC)(31 downto 2) & (not iCALIBRATION_ACTIVE) & sRegArray(rTRIGBUSY_LOGIC)(0);
 
   -- Legacy e Test Unit mantengono la lunghezza configurata. Per i pacchetti di LW si usa invece il numero di parole realmente scritte nella FIFO, al quale si aggiunge l'overhead di 10
   sPacketLength <= sRegArray(rPKT_LEN) when sTestUnitEn = '1' or iTRIG_TYPE = cTRIG_TYPE_LEGACY else std_logic_vector(unsigned(iPAYLOAD_WORDS) + to_unsigned(cFASTDATA_OVERHEAD, cREG_WIDTH));
   sPacketTrigType <= cTRIG_TYPE_LEGACY when sTestUnitEn = '1' else iTRIG_TYPE;
 
-  -- Il descrittore usa il trigger conservato e il tipo del payload reale
-  sMetaDataIn.detId   <= sPendingDetId;
+  -- Payload normali associati al trigger in pending
+  -- Dump associato ai contatori correnti
+  sMetaDataIn.detId   <= sPendingDetId when sPendingValid = '1' else sRegArray(rDET_ID)(15 downto 0);
   sMetaDataIn.pktLen  <= sPacketLength;
-  sMetaDataIn.trigNum <= sPendingTrigNum;
-  sMetaDataIn.trigId  <= sPendingTrigId;
+  sMetaDataIn.trigNum <= sPendingTrigNum when sPendingValid = '1' else sTrigCount;
+  sMetaDataIn.trigId  <= sPendingTrigId when sPendingValid = '1' else sTrigId;
+
   sSsId <= (others=>'0');
   sTrigType <= sPacketTrigType;
-  sMetaDataIn.intTime <= sPendingIntTime(63 downto 8) & sTrigType;
-  sMetaDataIn.extTime <= sPendingExtTime;
+  sMetaDataIn.intTime <= sPendingIntTime(63 downto 8) & sTrigType when sPendingValid = '1' else iINT_TS(31 downto 0) & '1' & "0000000" & sSsId & x"00" & sTrigType;
+  sMetaDataIn.extTime <= sPendingExtTime when sPendingValid = '1' else iEXT_TS;
 
   -- Il trigger viene conservato senza accodare subito un descrittore
   METADATA_TRIGGER_LATCH : process(iCLK)
@@ -156,6 +165,7 @@ begin
         sPendingTrigId  <= (others => '0');
         sPendingIntTime <= (others => '0');
         sPendingExtTime <= (others => '0');
+        sPendingValid   <= '0';
       elsif sTrig = '1' then
         sPendingTrigNum <= sTrigCount;
         sPendingDetId   <= sRegArray(rDET_ID)(15 downto 0);
@@ -165,6 +175,7 @@ begin
         sPendingIntTime <= iINT_TS(31 downto 0) & '1' & "0000000" &
                            sSsId & x"00" & x"00";
         sPendingExtTime <= iEXT_TS;
+        sPendingValid   <= '1';
       end if;
     end if;
   end process METADATA_TRIGGER_LATCH;
@@ -368,8 +379,8 @@ begin
   sFpgaRegIntf.we(rFDI_FIFO_NUMWORD) <= '1';
   sFpgaRegIntf.regs(10)              <= (others => '0');
   sFpgaRegIntf.we(10)                <= '0';
-  sFpgaRegIntf.regs(11)              <= (others => '0');
-  sFpgaRegIntf.we(11)                <= '0';
+  sFpgaRegIntf.regs(rCALIB_STATUS)   <= (0 => iCALIB_VALID, 1 => iRUN_IDLE, others => '0');
+  sFpgaRegIntf.we(rCALIB_STATUS)     <= '1';
   sFpgaRegIntf.regs(12)              <= (others => '0');
   sFpgaRegIntf.we(12)                <= '0';
   sFpgaRegIntf.regs(13)              <= (others => '0');

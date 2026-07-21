@@ -46,7 +46,14 @@ entity DetectorInterface is
 
     iDAQ_MODE       : in  std_logic_vector(1 downto 0);
     iCAL_ENABLE     : in  std_logic;
+    iCAL_DUMP       : in  std_logic;
+    iCAL_SAVE       : in  std_logic;
+    iCAL_ABORT      : in  std_logic;
     iEVT_ENABLE     : in  std_logic;
+    oCALIB_VALID    : out std_logic;
+    oCALIB_DONE     : out std_logic;
+    oCALIB_TRIG_READY : out std_logic;
+    oPIPELINE_IDLE  : out std_logic;
     oLED            : out std_logic_vector(3 downto 0)
     );
 end DetectorInterface;
@@ -62,6 +69,7 @@ architecture std of DetectorInterface is
   constant cMODE_MIXED      : std_logic_vector(1 downto 0) := "11";
 
   type tLW_Output_State is (RAW_OUTPUT, CLUSTER_OUTPUT, DISCARD_OUTPUT);
+  type tCalDumpState is (CAL_DUMP_IDLE, CAL_DUMP_WAIT, CAL_DUMP_SEND);
 
   function fCalibTrigType(
     iCalibType : std_logic_vector(1 downto 0)
@@ -110,6 +118,9 @@ architecture std of DetectorInterface is
   signal sFastData_Data_LW_RAW : std_logic_vector(cADC_DATA_WIDTH-1 downto 0);
   signal sFastData_WE_LW_RAW   : std_logic;
   signal sFastData_ADDR_LW_RAW   : std_logic_vector((ceil_log2(cTOTAL_ADCS * cADC_CHANNELS))-1 downto 0);
+  signal sLW_ER_Data           : std_logic_vector(cADC_DATA_WIDTH-1 downto 0);
+  signal sLW_ER_WE             : std_logic;
+  signal sLW_ER_Addr           : std_logic_vector((ceil_log2(cTOTAL_ADCS * cADC_CHANNELS))-1 downto 0);
   signal sFastData_Data_LW_LSB : std_logic_vector(cADC_DATA_WIDTH-1 downto 0);
   signal sFastData_LW_HalfFull : std_logic;
   signal sLW_Output_State      : tLW_Output_State;
@@ -123,6 +134,27 @@ architecture std of DetectorInterface is
   signal sTrig_Type_LW         : std_logic_vector(7 downto 0);
   signal sCalib_Packet_Type    : std_logic_vector(7 downto 0);
   signal sRaw_Packet_Word_Count : natural range 0 to cLW_EVENT_WORDS-1;
+  signal sLW_Calib_Trig_Ready  : std_logic;
+  signal sLW_Packer_Idle       : std_logic;
+  signal sLW_Calib_Valid       : std_logic;
+  signal sLW_Calib_Done        : std_logic;
+  signal sStream_Calib_Type    : std_logic_vector(1 downto 0);
+
+  -- Lettura diretta delle RAM di calibrazione
+  -- Indirizzo comune alle strip di ogni ADC
+  -- ADC serializzati prima della strip successiva
+  signal sCalDumpState         : tCalDumpState;
+  signal sCalDumpActive        : std_logic;
+  signal sCalDumpDone          : std_logic;
+  signal sCalDumpTable         : natural range 0 to 3;
+  signal sCalDumpStrip         : natural range 0 to cADC_CHANNELS-1;
+  signal sCalDumpAdc           : natural range 0 to cTOTAL_ADCS-1;
+  signal sCalDumpAddr          : std_logic_vector(ceil_log2(cADC_CHANNELS)-1 downto 0);
+  signal sCalDumpSelectedData  : std_logic_vector(cADC_DATA_WIDTH-1 downto 0);
+  signal sCalDumpStreamData    : std_logic_vector(cADC_DATA_WIDTH-1 downto 0);
+  signal sCalDumpStreamAddr    : std_logic_vector(ceil_log2(cTOTAL_ADCS * cADC_CHANNELS)-1 downto 0);
+  signal sCalDumpStreamType    : std_logic_vector(1 downto 0);
+  signal sCalDumpStreamWE      : std_logic;
 
   signal sFastData_Data_PE  : std_logic_vector(cREG_WIDTH-1 downto 0);
   signal sFastData_WE_PE    : std_logic;
@@ -150,6 +182,7 @@ architecture std of DetectorInterface is
   signal sLW_Clust_EN   : std_logic;
   signal sLW_Event_Accepted : std_logic;
   signal sLW_Calib_Type : std_logic_vector(1 downto 0);
+  signal sLW_Busy       : std_logic;
 
   -- CLUSTERING
   signal sClust_Read_Addr   : std_logic_vector((ceil_log2(cTOTAL_ADCS * cADC_CHANNELS))-1 downto 0);
@@ -171,6 +204,16 @@ architecture std of DetectorInterface is
 
 begin
 
+  oCALIB_VALID <= sLW_Calib_Valid;
+  oCALIB_DONE  <= sLW_Calib_Done or sCalDumpDone;
+  sCalDumpActive <= '1' when sCalDumpState /= CAL_DUMP_IDLE else '0';
+
+  -- Gli eventi passano sempre le nuove tabelle passano solo con SAVE i dump leggono le RAM senza LadderWrapper
+  sFastData_Data_LW_RAW <= sCalDumpStreamData  when sCalDumpActive = '1' or sCalDumpStreamWE = '1' else sLW_ER_Data;
+  sFastData_ADDR_LW_RAW <= sCalDumpStreamAddr when sCalDumpActive = '1' or sCalDumpStreamWE = '1' else sLW_ER_Addr;
+  sFastData_WE_LW_RAW   <= sCalDumpStreamWE or (sLW_ER_WE and (sNormal_Event_Armed or iCAL_SAVE));
+  sStream_Calib_Type    <= sCalDumpStreamType when sCalDumpActive = '1' or sCalDumpStreamWE = '1' else sLW_Calib_Type;
+
   sCntIn.en     <= iEN;
   sCntIn.start  <= sExtTrigDel;
   sCntIn.slwClk <= '0';
@@ -181,6 +224,34 @@ begin
   oCNT.error <= sCntOut.error;
   oCNT.reset <= sCntOut.reset;
   oCNT.compl <= sCntOut.compl;
+
+  -- Serve ad evitare IDLE se la parola sta ancora in conv da 16 a 32 bit nel processo che crea le parole doppie sotto.
+  sLW_Packer_Idle <= '1' when 
+    sFastData_WE_LW_RAW = '0'     and 
+    sFastData_WE_LW = '0'         and 
+    sFastData_LW_HalfFull = '0'   and 
+    sRaw_Packet_Word_Count = 0    and 
+    sPacket_Valid_LW = '0'        and 
+    sLW_Output_State = RAW_OUTPUT else
+    '0';
+
+  -- Indica che tutti i dati accettati sono stati elaborati e si può cambiare modalità (NON DAQ MODE) senza perdere dati.
+  oPIPELINE_IDLE <= '1' when
+    sCntOut.busy = '0'            and 
+    sExtTrigDelBusy = '0'         and
+    sTrigDelBusy = '0'            and 
+    sExtendBusy = '0'             and
+    sLW_Busy = '0'                and 
+    sClust_Busy = '0'             and 
+    sPacket_Busy = '0'            and
+    sNormal_Event_Armed = '0'     and 
+    sCalDumpActive = '0'          and
+    sLW_Packer_Idle = '1'         and
+    sFastData_WE_PE = '0'         else
+    '0';
+
+  -- FSM può eseguire CAL_ABORT senza troncare evento o pacchetto SAVE ancora in uscita.
+  oCALIB_TRIG_READY <= '1' when sLW_Calib_Trig_Ready = '1' and sLW_Packer_Idle = '1' else '0';
 
   sAdcFast   <= iMSD_CONFIG.cfgPlane(15);
   --sCalTrigEn <= iMSD_CONFIG.cfgPlane(14); --Used only in FOOT
@@ -366,7 +437,7 @@ begin
 
                   -- Il tipo di tabella calibrazione viene campionato all'inizio: sCWState puè avanzare mentre l'ultima parola attraversa i registri di LadderWrapper.
                   if sRaw_Packet_Word_Count = 0 and sNormal_Event_Armed = '0' then
-                    sCalib_Packet_Type <= fCalibTrigType(sLW_Calib_Type);
+                    sCalib_Packet_Type <= fCalibTrigType(sStream_Calib_Type);
                   end if;
 
                   if sRaw_Packet_Word_Count = cLW_EVENT_WORDS-1 then
@@ -472,6 +543,81 @@ begin
       end if;
     end process LW_FASTDATA_PACK;
 
+    sCalDumpAddr <= std_logic_vector(
+      to_unsigned(sCalDumpStrip, sCalDumpAddr'length));
+
+    with sCalDumpTable select sCalDumpSelectedData <=
+      sPedOut_Cal.DATA(sCalDumpAdc)    when 0,
+      sSigRawOut_Cal.DATA(sCalDumpAdc) when 1,
+      sSigOut_Cal.DATA(sCalDumpAdc)    when 2,
+      sFlgOut_Cal.DATA(sCalDumpAdc)    when others;
+
+    -- Dump della calibrazione salvata
+    -- Nessun trigger richiesto
+    CALIB_RAM_DUMP : process(iCLK)
+    begin
+      if rising_edge(iCLK) then
+        if iRST = '1' then
+          sCalDumpState      <= CAL_DUMP_IDLE;
+          sCalDumpDone       <= '0';
+          sCalDumpTable      <= 0;
+          sCalDumpStrip      <= 0;
+          sCalDumpAdc        <= 0;
+          sCalDumpStreamData <= (others => '0');
+          sCalDumpStreamAddr <= (others => '0');
+          sCalDumpStreamType <= (others => '0');
+          sCalDumpStreamWE   <= '0';
+        else
+          sCalDumpDone     <= '0';
+          sCalDumpStreamWE <= '0';
+
+          case sCalDumpState is
+            when CAL_DUMP_IDLE =>
+              if iCAL_DUMP = '1' and sLW_Calib_Valid = '1' then
+                sCalDumpTable <= 0;
+                sCalDumpStrip <= 0;
+                sCalDumpAdc   <= 0;
+                sCalDumpState <= CAL_DUMP_WAIT;
+              end if;
+
+            when CAL_DUMP_WAIT =>
+              sCalDumpState <= CAL_DUMP_SEND;
+
+            when CAL_DUMP_SEND =>
+              if iFASTDATA_AFULL = '0' then
+                sCalDumpStreamData <= sCalDumpSelectedData;
+                sCalDumpStreamAddr <= std_logic_vector(to_unsigned(
+                  (sCalDumpAdc * cADC_CHANNELS) + sCalDumpStrip,
+                  sCalDumpStreamAddr'length));
+                sCalDumpStreamType <= std_logic_vector(
+                  to_unsigned(sCalDumpTable, sCalDumpStreamType'length));
+                sCalDumpStreamWE <= '1';
+
+                if sCalDumpAdc /= cTOTAL_ADCS-1 then
+                  sCalDumpAdc <= sCalDumpAdc + 1;
+                else
+                  sCalDumpAdc <= 0;
+                  if sCalDumpStrip /= cADC_CHANNELS-1 then
+                    sCalDumpStrip <= sCalDumpStrip + 1;
+                    sCalDumpState <= CAL_DUMP_WAIT;
+                  elsif sCalDumpTable /= 3 then
+                    sCalDumpTable <= sCalDumpTable + 1;
+                    sCalDumpStrip <= 0;
+                    sCalDumpState <= CAL_DUMP_WAIT;
+                  else
+                    sCalDumpDone  <= '1';
+                    sCalDumpState <= CAL_DUMP_IDLE;
+                  end if;
+                end if;
+              end if;
+
+            when others =>
+              sCalDumpState <= CAL_DUMP_IDLE;
+          end case;
+        end if;
+      end if;
+    end process CALIB_RAM_DUMP;
+
     oLED(1)  <= sLW_Valid_ER;
     LADDER_WRAPPER : LadderWrapper
       generic map(
@@ -496,14 +642,18 @@ begin
         oEVENT_ACCEPTED => sLW_Event_Accepted,
         oCALIB_TYPE    => sLW_Calib_Type,
         iCAL_ENABLE    => iCAL_ENABLE,
+        iCAL_ABORT     => iCAL_ABORT,
         iEVT_ENABLE    => iEVT_ENABLE,
+        oCALIB_VALID   => sLW_Calib_Valid,
+        oCALIB_DONE    => sLW_Calib_Done,
+        oCALIB_TRIG_READY => sLW_Calib_Trig_Ready,
         iTHR_VALID     => iTHR_VALID,
         iK1            => iLTH,
         iK2            => iHTH,
-        oBUSY          => oLED(0),
-        oER_WE         => sFastData_WE_LW_RAW,
-        oER_W_ADDR     => sFastData_ADDR_LW_RAW,
-        oER_DATA       => sFastData_Data_LW_RAW,
+        oBUSY          => sLW_Busy,
+        oER_WE         => sLW_ER_WE,
+        oER_W_ADDR     => sLW_ER_Addr,
+        oER_DATA       => sLW_ER_Data,
         iPED           => sPedIn_Cal,
         oPED           => sPedOut_Cal,
         iSIGRAW        => sSigRawIn_Cal,
@@ -516,6 +666,8 @@ begin
         oHTH           => sHthOut_Cal,
         oRHT           => sRhtOut_Cal
       );
+
+    oLED(0) <= sLW_Busy;
 
       EVENT_RAM : parametric_ram_tp
         generic map(
@@ -537,23 +689,23 @@ begin
       -- I campi non utilizzati restano a zero
       sPedIn_Cal.DATA     <= (others => (others => '0'));
       sPedIn_Cal.WADDR    <= (others => '0');
-      sPedIn_Cal.RADDR    <= (others => '0');
+      sPedIn_Cal.RADDR    <= sCalDumpAddr when sCalDumpActive = '1' else (others => '0');
       sPedIn_Cal.WE       <= '0';
 
       sSigRawIn_Cal.DATA  <= (others => (others => '0'));
       sSigRawIn_Cal.WADDR <= (others => '0');
-      sSigRawIn_Cal.RADDR <= (others => '0');
+      sSigRawIn_Cal.RADDR <= sCalDumpAddr when sCalDumpActive = '1' else (others => '0');
       sSigRawIn_Cal.WE    <= '0';
 
       sSigIn_Cal.DATA     <= (others => (others => '0'));
       sSigIn_Cal.WADDR    <= (others => '0');
       sSigIn_Cal.WE       <= '0';
-      sSigIn_Cal.RADDR    <= sClust_Read_Addr(ceil_log2(cADC_CHANNELS)-1 downto 0) when sClust_Read_En = '1' else (others => '0');
+      sSigIn_Cal.RADDR    <= sCalDumpAddr when sCalDumpActive = '1' else sClust_Read_Addr(ceil_log2(cADC_CHANNELS)-1 downto 0) when sClust_Read_En = '1' else (others => '0');
 
       sFlgIn_Cal.DATA     <= (others => (others => '0'));
       sFlgIn_Cal.WADDR    <= (others => '0');
       sFlgIn_Cal.WE       <= '0';
-      sFlgIn_Cal.RADDR    <= sClust_Read_Addr(ceil_log2(cADC_CHANNELS)-1 downto 0) when sClust_Read_En = '1' else (others => '0');
+      sFlgIn_Cal.RADDR    <= sCalDumpAddr when sCalDumpActive = '1' else sClust_Read_Addr(ceil_log2(cADC_CHANNELS)-1 downto 0) when sClust_Read_En = '1' else (others => '0');
 
       -- LANE SELECT FOR CLUSTERING
       LANE_SEL : process (iCLK, iRST) is
