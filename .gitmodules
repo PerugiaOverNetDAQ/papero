@@ -1,3 +1,6 @@
 [submodule "Hog"]
 	path = Hog
 	url = https://gitlab.cern.ch/hog/Hog.git
+[submodule "logic/ninfee-msd"]
+	path = logic/ninfee-msd
+	url = git@github.com:PerugiaOverNetDAQ/ninfee-msd.git

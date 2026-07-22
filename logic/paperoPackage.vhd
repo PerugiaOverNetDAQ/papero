@@ -61,13 +61,25 @@ package paperoPackage is
   constant rMSD_PARAM      : natural := 7;
   constant rBUSYADC_PARAM  : natural := 8;
   constant rHV_PARAM       : natural := 9;
+  constant rTHR_PARAM      : natural := 11; -- Registro dedicato alle threshold. Qui carico HTH|LTH
+
+  -- Register 0 command bits
+  constant cRUN_REQUEST_BIT   : natural := 4;   -- Avvia e mantiene il comando quando 1, 0 fa stop.
+  constant cEVENT_ENABLE_BIT  : natural := 16;  -- Abilita LW dopo calib o dump
+  constant cFORCE_CALIB_BIT   : natural := 17;  -- Forza il calcolo di una nuova calib anche se ne esiste già una valida
+  constant cTHR_VALID_BIT     : natural := 18;  -- Carica le THR da REG11 e genera impulto valid per applicarle
+  constant cAUTO_CALIB_BIT    : natural := 19;  -- Calcola una nuova calib solamente se non esiste una valida
+  constant cSAVE_CALIB_BIT    : natural := 20;  -- Invia le quattro tabelle di calibrazione
+  constant cDAQ_MODE_LSB      : natural := 24;  -- LSB DAQ MODE
+  constant cDAQ_MODE_MSB      : natural := 25;  -- MSB DAQ MODE
+
   --!Register array HPS-RW, FPGA-R
   type tHpsRegArray is array (0 to cHPS_REGISTERS-1) of
     std_logic_vector(cREG_WIDTH-1 downto 0);
   constant cHPS_REG_NULL : tHpsRegArray := (
     x"00000000", x"00000001", x"02faf080", x"000000FF",
     x"0000028A", cFE_CLK_DUTY & cFE_CLK_DIV, cADC_CLK_DUTY & cADC_CLK_DIV , cCFG_PLANE & cTRG2HOLD,
-    cBUSY_LEN & cADC_DELAY, x"01330133", x"00000000", x"00000000",
+    cBUSY_LEN & cADC_DELAY, x"01330133", x"00000000",  cHTH & cLTH,
     x"00000000", x"00000000", x"00000000", x"00000000"
     );                                  --!Null vector for HPS register array
 
@@ -82,7 +94,20 @@ package paperoPackage is
   constant rINT_TRG_COUNT    : natural := 8;
   constant rFDI_FIFO_NUMWORD : natural := 9;
   constant rHV_CURR_MON      : natural := 10;
+  constant rCALIB_STATUS     : natural := 11;
   constant rPIUMONE          : natural := 15;
+
+  --!Fast-data packet format
+  constant cFASTDATA_OVERHEAD    : natural := 10;
+  constant cTRIG_TYPE_PEDESTAL   : std_logic_vector(7 downto 0) := x"80";
+  constant cTRIG_TYPE_SIGMA_RAW  : std_logic_vector(7 downto 0) := x"40";
+  constant cTRIG_TYPE_SIGMA      : std_logic_vector(7 downto 0) := x"20";
+  constant cTRIG_TYPE_FLAG       : std_logic_vector(7 downto 0) := x"10";
+  constant cTRIG_TYPE_LEGACY     : std_logic_vector(7 downto 0) := x"08";
+  constant cTRIG_TYPE_RAW        : std_logic_vector(7 downto 0) := x"04";
+  constant cTRIG_TYPE_COMPRESSED : std_logic_vector(7 downto 0) := x"02";
+  constant cTRIG_TYPE_MIXED      : std_logic_vector(7 downto 0) := x"01";
+
   --!Register array HPS-R, FPGA-RW
   type tFpgaRegArray is array (0 to cFPGA_REGISTERS-1) of
     std_logic_vector(cREG_WIDTH-1 downto 0);
@@ -204,22 +229,6 @@ package paperoPackage is
       );
   end component;
 
-  --!Allunga di un ciclo di clock lo stato "alto" del segnale di "Wait_Request"
-  component HighHold is
-    generic(
-      channels   : integer   := 1;
-      BAS_vs_BSS : std_logic := '0'
-      );
-    port(
-      CLK_in      : in  std_logic;
-      DATA_in     : in  std_logic_vector(channels - 1 downto 0);
-      DELAY_1_out : out std_logic_vector(channels - 1 downto 0);
-      DELAY_2_out : out std_logic_vector(channels - 1 downto 0);
-      DELAY_3_out : out std_logic_vector(channels - 1 downto 0);
-      DELAY_4_out : out std_logic_vector(channels - 1 downto 0)
-      );
-  end component;
-
   --!Temporizza l'invio di impulsi sul read_enable della FIFO
   component WR_Timer is
     port(
@@ -284,20 +293,6 @@ package paperoPackage is
       );
   end component;
 
-  --!@copydoc CRC32.vhd
-  component CRC32 is
-    generic(
-      pINITIAL_VAL : std_logic_vector(31 downto 0) := x"FFFFFFFF"
-      );
-    port (
-      iCLK    : in  std_logic;          --!Main Clock (used at rising edge)
-      iRST    : in  std_logic;          --!Main Reset (synchronous)
-      iCRC_EN : in  std_logic;          --!Enable
-      iDATA   : in  std_logic_vector (31 downto 0);  --!Input to compute the CRC on
-      oCRC    : out std_logic_vector (31 downto 0)   --!CRC32 of the sequence
-      );
-  end component;
-
   --!@copydoc HPS_intf.vhd
   component HPS_intf is
     generic (
@@ -352,28 +347,6 @@ package paperoPackage is
       iENABLE : in  std_logic;
       iD      : in  std_logic;
       oQ      : out std_logic
-      );
-  end component;
-
-  --!@copydoc PRBS8.vhd
-  --!Modulo per la generazione di dati pseudo-casuali a 8 bit
-  component PRBS8 is
-    port(
-      iCLK      : in  std_logic;
-      iRST      : in  std_logic;
-      iPRBS8_en : in  std_logic;
-      oDATA     : out std_logic_vector(7 downto 0)
-      );
-  end component;
-
-  --!@copydoc PRBS32.vhd
-  --!Modulo per la generazione di dati pseudo-casuali a 32 bit
-  component PRBS32 is
-    port(
-      iCLK       : in  std_logic;
-      iRST       : in  std_logic;
-      iPRBS32_en : in  std_logic;
-      oDATA      : out std_logic_vector(31 downto 0)
       );
   end component;
 
@@ -461,15 +434,24 @@ package paperoPackage is
       iHV_MON             : in std_logic_vector(31 downto 0);
       --# {{TrigBusy|TrigBusy}}
       iEXT_TRIG           : in std_logic;
+      iTRIG_ENABLE        : in  std_logic;
+      iCALIBRATION_ACTIVE : in  std_logic;
+      iCALIB_VALID        : in  std_logic;
+      iRUN_IDLE           : in  std_logic;
       --# {{TrigBusy|TrigBusy}}
       oTRIG               : out std_logic;
       oBUSY               : out std_logic;
+      oDATA_IDLE          : out std_logic;
       iTRG_BUSIES_AND     : in  std_logic_vector(7 downto 0);
       iTRG_BUSIES_OR      : in  std_logic_vector(7 downto 0);
       --# {{FastDATA-Detector interface|FastDATA-Detector interface}}
       iFASTDATA_DATA      : in  std_logic_vector(cREG_WIDTH-1 downto 0);
       iFASTDATA_WE        : in  std_logic;
       oFASTDATA_AFULL     : out std_logic;
+      --# {{Metadata associato a un payload reale}}
+      iPACKET_VALID       : in  std_logic;
+      iPAYLOAD_WORDS      : in  std_logic_vector(cREG_WIDTH-1 downto 0);
+      iTRIG_TYPE          : in  std_logic_vector(7 downto 0);
       --# {{H2F_FIFO|H2F_FIFO}}
       iFIFO_H2F_EMPTY     : in  std_logic;
       iFIFO_H2F_DATA      : in  std_logic_vector(31 downto 0);
@@ -546,7 +528,25 @@ package paperoPackage is
       --# {{FastDATA Interface|FastDATA Interface}}
       oFASTDATA_DATA  : out std_logic_vector(cREG_WIDTH-1 downto 0);
       oFASTDATA_WE    : out std_logic;
-      iFASTDATA_AFULL : in  std_logic
+      iFASTDATA_AFULL : in  std_logic;
+      --# {{Metadata valido quando la lunghezza reale del payload è nota}}
+      oPACKET_VALID   : out std_logic;
+      oPAYLOAD_WORDS  : out std_logic_vector(cREG_WIDTH-1 downto 0);
+      oTRIG_TYPE      : out std_logic_vector(7 downto 0);
+      iTHR_VALID      : in  std_logic;
+      iLTH            : in  std_logic_vector(cADC_DATA_WIDTH-1 downto 0);
+      iHTH            : in  std_logic_vector(cADC_DATA_WIDTH-1 downto 0);
+      iDAQ_MODE       : in  std_logic_vector(1 downto 0);
+      iCAL_ENABLE     : in  std_logic;
+      iCAL_DUMP       : in  std_logic;
+      iCAL_SAVE       : in  std_logic;
+      iCAL_ABORT      : in  std_logic;
+      iEVT_ENABLE     : in  std_logic;
+      oCALIB_VALID    : out std_logic;
+      oCALIB_DONE     : out std_logic;
+      oCALIB_TRIG_READY : out std_logic;
+      oPIPELINE_IDLE  : out std_logic;
+      oLED            : out std_logic_vector(3 downto 0)
       );
   end component;
 
@@ -608,56 +608,5 @@ package paperoPackage is
     );
   end component;
 
-  -- Functions -----------------------------------------------------------------
-  --!@brief Compute the parity bit of an 8-bit data with both polarities
-  --!@param[in] p String containing the polarity, "EVEN" or "ODD"
-  --!@param[in] d Input 8-bit data
-  --!@return  Parity bit of the incoming 8-bit data
-  function parity8bit (p : string; d : std_logic_vector(7 downto 0)) return std_logic;
-
-  --!@brief Compute the and between all the elements of a std_logic_vector
-  --!@param[in] slv Input std_logic_vector to be reduced to a std_logic
-  --!@return  And of all of the slv elements
-  function unary_and(slv : in std_logic_vector) return std_logic;
-
-  --!@brief Compute the or between all the elements of a std_logic_vector
-  --!@param[in] slv Input std_logic_vector to be reduced to a std_logic
-  --!@return  Or of all of the slv elements
-  function unary_or(slv : in std_logic_vector) return std_logic;
 
 end paperoPackage;
-
---!@copydoc paperoPackage.vhd
-package body paperoPackage is
-  function parity8bit (p : string; d : std_logic_vector(7 downto 0)) return std_logic is
-    variable x : std_logic;
-  begin
-    if p = "ODD" then
-      x := not (d(0) xor d(1) xor d(2) xor d(3)
-                xor d(4) xor d(5) xor d(6) xor d(7));
-    elsif p = "EVEN" then
-      x := d(0) xor d(1) xor d(2) xor d(3)
-           xor d(4) xor d(5) xor d(6) xor d(7);
-    end if;
-    return x;
-  end function;
-
-  function unary_and(slv : in std_logic_vector) return std_logic is
-    variable and_v : std_logic := '1';  -- Null input returns '1'
-  begin
-    for i in slv'range loop
-      and_v := and_v and slv(i);
-    end loop;
-    return and_v;
-  end function;
-
-  function unary_or(slv : in std_logic_vector) return std_logic is
-    variable or_v : std_logic := '0';   -- Null input returns '0'
-  begin
-    for i in slv'range loop
-      or_v := or_v or slv(i);
-    end loop;
-    return or_v;
-  end function;
-
-end package body;

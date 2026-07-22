@@ -29,14 +29,22 @@ entity TdaqModule is
     iHV_MON             : in std_logic_vector(31 downto 0);   --!HV current monitor (for both HEF)
     --Trigger and Busy logic
     iEXT_TRIG           : in std_logic;
+    iTRIG_ENABLE        : in  std_logic;
+    iCALIBRATION_ACTIVE : in  std_logic;
+    iCALIB_VALID        : in  std_logic;
+    iRUN_IDLE           : in  std_logic;
     oTRIG               : out std_logic;
     oBUSY               : out std_logic;
+    oDATA_IDLE          : out std_logic;
     iTRG_BUSIES_AND     : in  std_logic_vector(7 downto 0);
     iTRG_BUSIES_OR      : in  std_logic_vector(7 downto 0);
     --FastDATA-Detector interface
     iFASTDATA_DATA      : in  std_logic_vector(cREG_WIDTH-1 downto 0);
     iFASTDATA_WE        : in  std_logic;
     oFASTDATA_AFULL     : out std_logic;
+    iPACKET_VALID       : in  std_logic;
+    iPAYLOAD_WORDS      : in  std_logic_vector(cREG_WIDTH-1 downto 0);
+    iTRIG_TYPE          : in  std_logic_vector(7 downto 0);
     --H2F
     iFIFO_H2F_EMPTY     : in  std_logic;  --!FIFO H2F Wait Request
     iFIFO_H2F_DATA      : in  std_logic_vector(31 downto 0);  --!FIFO H2F q
@@ -91,6 +99,7 @@ architecture std of TdaqModule is
   signal sTrigCfg           : std_logic_vector(31 downto 0);
   signal sBusy              : std_logic;
   signal sTrig              : std_logic;
+  signal sTrigDelayed       : std_logic;
 
   -- Trigger and detector information
   signal sSsId        : std_logic_vector(7 downto 0);
@@ -103,10 +112,21 @@ architecture std of TdaqModule is
   signal sTestUnitData  : std_logic_vector(cREG_WIDTH-1 downto 0);
   signal sTestUnitWr    : std_logic;
   signal sTestUnitAfull : std_logic;
+  signal sPacketLength  : std_logic_vector(cREG_WIDTH-1 downto 0);
+  signal sPacketTrigType : std_logic_vector(7 downto 0);
+
+  -- Metadata del trigger più recente conservato fino al payload
+  signal sPendingTrigNum : std_logic_vector(31 downto 0);
+  signal sPendingDetId   : std_logic_vector(15 downto 0);
+  signal sPendingTrigId  : std_logic_vector(15 downto 0);
+  signal sPendingIntTime : std_logic_vector(63 downto 0);
+  signal sPendingExtTime : std_logic_vector(63 downto 0);
+  signal sPendingValid   : std_logic;
+
 
 begin
   -- Register Array assignments
-  sTrigEn                 <= sRegArray(rGOTO_STATE)(4);
+  sTrigEn                 <= iTRIG_ENABLE;
   --
   sF2hFastCnt.en          <= sRegArray(rUNITS_EN)(0);
   sF2hFastCnt.start       <= sRegArray(rUNITS_EN)(0);
@@ -116,25 +136,80 @@ begin
   sHkRdrCnt.en            <= sRegArray(rUNITS_EN)(6);
   sTestUnitCfg            <= sRegArray(rUNITS_EN)(9 downto 8);
   --
-  sTrigCfg                <= sRegArray(rTRIGBUSY_LOGIC);
+  -- Carico in trigCfg la configurazione del trigger
+  -- bit1: 1 | triggerFisico || 0 | triggerCalib
+  -- bit0: 0 | esterno || 1 | interno
+  sTrigCfg <= sRegArray(rTRIGBUSY_LOGIC)(31 downto 2) & (not iCALIBRATION_ACTIVE) & sRegArray(rTRIGBUSY_LOGIC)(0);
 
-  -- Metadata assignments
-  sMetaDataIn.detId   <= sRegArray(rDET_ID)(15 downto 0);
-  sMetaDataIn.pktLen  <= sRegArray(rPKT_LEN);
-  sMetaDataIn.trigNum <= sTrigCount;
-  sMetaDataIn.trigId  <= sTrigId;
+  -- Legacy e Test Unit mantengono la lunghezza configurata. Per i pacchetti di LW si usa invece il numero di parole realmente scritte nella FIFO, al quale si aggiunge l'overhead di 10
+  sPacketLength <= sRegArray(rPKT_LEN) when sTestUnitEn = '1' or iTRIG_TYPE = cTRIG_TYPE_LEGACY else std_logic_vector(unsigned(iPAYLOAD_WORDS) + to_unsigned(cFASTDATA_OVERHEAD, cREG_WIDTH));
+  sPacketTrigType <= cTRIG_TYPE_LEGACY when sTestUnitEn = '1' else iTRIG_TYPE;
+
+  -- Payload normali associati al trigger in pending
+  -- Dump associato ai contatori correnti
+  sMetaDataIn.detId   <= sPendingDetId when sPendingValid = '1' else sRegArray(rDET_ID)(15 downto 0);
+  sMetaDataIn.pktLen  <= sPacketLength;
+  sMetaDataIn.trigNum <= sPendingTrigNum when sPendingValid = '1' else sTrigCount;
+  sMetaDataIn.trigId  <= sPendingTrigId when sPendingValid = '1' else sTrigId;
+
   sSsId <= (others=>'0');
-  sTrigType <= (others=>'0');
-  sMetaDataIn.intTime <= iINT_TS(31 downto 0) & '1' & "0000000" & sSsId & x"00" & sTrigType;
-  --sMetaDataIn.intTime <= sSsId & sTrigType & iINT_TS(63-16 downto 0); --Line above for compatibility only; is this ok?
-  sMetaDataIn.extTime <= iEXT_TS;
+  sTrigType <= sPacketTrigType;
+  sMetaDataIn.intTime <= sPendingIntTime(63 downto 8) & sTrigType when sPendingValid = '1' else iINT_TS(31 downto 0) & '1' & "0000000" & sSsId & x"00" & sTrigType;
+  sMetaDataIn.extTime <= sPendingExtTime when sPendingValid = '1' else iEXT_TS;
   sMetaDataIn.biasSet <= sRegArray(rHV_PARAM);
-  sMetaDataIn.biasCur <= iHV_MON;
+  sMetaDataIn.biasCur <= iHV_MON; -- FIXME: to check for metadata pending valid.
+
+  -- Il trigger viene conservato senza accodare subito un descrittore
+  METADATA_TRIGGER_LATCH : process(iCLK)
+  begin
+    if rising_edge(iCLK) then
+      if iRST = '1' or sTrigEn = '0' then
+        sPendingTrigNum <= (others => '0');
+        sPendingDetId   <= (others => '0');
+        sPendingTrigId  <= (others => '0');
+        sPendingIntTime <= (others => '0');
+        sPendingExtTime <= (others => '0');
+        sPendingValid   <= '0';
+      elsif sTrig = '1' then
+        sPendingTrigNum <= sTrigCount;
+        sPendingDetId   <= sRegArray(rDET_ID)(15 downto 0);
+        sPendingTrigId  <= sTrigId;
+        -- Gli otto bit meno significativi vengono completati con il tipo
+        -- effettivo soltanto quando è nota anche la lunghezza del payload e quando poi vengono effettivamente scritti nella fifo metadata
+        sPendingIntTime <= iINT_TS(31 downto 0) & '1' & "0000000" &
+                           sSsId & x"00" & x"00";
+        sPendingExtTime <= iEXT_TS;
+        sPendingValid   <= '1';
+      end if;
+    end if;
+  end process METADATA_TRIGGER_LATCH;
+
+  -- Priority Encoder e TEST vogliono metadata sul trigger stesso. E' necessario un clock di ritardo per scrivere nella FIFO, sennè c'è desync.
+  METADATA_TRIGGER_DELAY : process(iCLK)
+  begin
+    if rising_edge(iCLK) then
+      if iRST = '1' or sTrigEn = '0' then
+        sTrigDelayed <= '0';
+      else
+        sTrigDelayed <= sTrig;
+      end if;
+    end if;
+  end process METADATA_TRIGGER_DELAY;
+
 
   --Ports assignments
   oREG_ARRAY <= sRegArray;
   oBUSY      <= sBusy;
   oTRIG      <= sTrig;
+
+  oDATA_IDLE <= '1' when sFdiFifoOut.empty = '1' and    -- Fifo vuota
+                           sMetaDataEmpty = '1' and     -- Fifo metadati vuota
+                           sF2hFastBusy = '0' and       -- FastData non è busy
+                           sMetaDataWr = '0' and        -- Non sto scrivendo metadati
+                           sMetaDataWrRe = '0' and      -- Non c'è fronte scrittura metadati pending
+                           iPACKET_VALID = '0' and      -- Non c'è un pacchetto valido da DetectorInterface
+                           sFdiFifoIn.wr = '0' else     -- Non è in corso scrittura in fastData
+                '0';
 
   --!@brief FPGA-HPS communication interfaces
   --!@todo connect sF2hFastBusy to the trigBusyLogic
@@ -217,7 +292,7 @@ begin
       pDEPTH       => pFDI_DEPTH,
       pUSEDW_WIDTH => ceil_log2(pFDI_DEPTH),
       pAEMPTY_VAL  => 2,
-      pAFULL_VAL   => pFDI_DEPTH-cMAX_WORDS_PER_EVT-3,
+      pAFULL_VAL   => pFDI_DEPTH-cMAX_WORDS_PER_EVT*2-3,
       pSHOW_AHEAD  => "OFF"
       )
     port map(
@@ -256,7 +331,8 @@ begin
       oBUSY           => sBusy
       );
 
-  sMetaDataWr <= sTrig; --FIXME: wait for some time before writing the metadata, to be sure that the trigger information is correct
+  sMetaDataWr <= sTrigDelayed when sTestUnitEn = '1' or iTRIG_TYPE = cTRIG_TYPE_LEGACY else iPACKET_VALID;
+
   MD_WR_ED : edge_detector
     port map(
       iCLK    => iCLK,
@@ -307,8 +383,8 @@ begin
   sFpgaRegIntf.we(rFDI_FIFO_NUMWORD) <= '1';
   sFpgaRegIntf.regs(rHV_CURR_MON)    <= iHV_MON;
   sFpgaRegIntf.we(rHV_CURR_MON)      <= '1';
-  sFpgaRegIntf.regs(11)              <= (others => '0');
-  sFpgaRegIntf.we(11)                <= '0';
+  sFpgaRegIntf.regs(rCALIB_STATUS)   <= (0 => iCALIB_VALID, 1 => iRUN_IDLE, others => '0');
+  sFpgaRegIntf.we(rCALIB_STATUS)     <= '1';
   sFpgaRegIntf.regs(12)              <= (others => '0');
   sFpgaRegIntf.we(12)                <= '0';
   sFpgaRegIntf.regs(13)              <= (others => '0');
