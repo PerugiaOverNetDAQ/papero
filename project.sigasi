@@ -1,0 +1,10 @@
+{
+    "name": "papero",
+    "targets": {
+        "rtl": {
+            "libraryMapping": {
+                "": "work"
+            }
+        }
+    }
+}
