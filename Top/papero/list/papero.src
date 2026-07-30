@@ -12,7 +12,7 @@ logic/registerArray.vhd 08
 logic/Config_Receiver.vhd
 logic/hkReader.vhd
 logic/HPS_intf.vhd
-logic/CRC32.vhd
+#logic/CRC32.vhd
 logic/Test_Unit.vhd
 logic/FastData_Transmitter.vhd
 logic/trigBusyLogic.vhd
@@ -26,11 +26,11 @@ logic/biasCurrLTC2312.vhd
 #Basic functions_md
 logic/edge_detector_md.vhd
 logic/Key_Pulse_Gen.vhd
-logic/HighHold.vhd
+#logic/HighHold.vhd
 logic/WR_Timer.vhd
 logic/FFD.vhd
-logic/PRBS8.vhd
-logic/PRBS32.vhd
+#logic/PRBS8.vhd
+#logic/PRBS32.vhd
 logic/Variable_PWM_FSM.vhd
 
 #Qsys IPs: regenerate the IP for each new build
@@ -62,6 +62,9 @@ logic/ninfee-msd/VHDL_basic_functions/pulse_generator.vhd
 logic/ninfee-msd/VHDL_basic_functions/shift_register.vhd
 logic/ninfee-msd/VHDL_basic_functions/sync_edge.vhd
 logic/ninfee-msd/VHDL_basic_functions/sync_stage.vhd
+logic/ninfee-msd/VHDL_basic_functions/HighHold.vhd
+logic/ninfee-msd/VHDL_basic_functions/PRBS8.vhd
+logic/ninfee-msd/VHDL_basic_functions/PRBS32.vhd
 
 #Calib
 logic/ninfee-msd/Calibration/CalibrationRAM.vhd         2008
@@ -86,5 +89,6 @@ logic/ninfee-msd/Clust/ClusterModule.vhd                2008
 
 #MSD interface files
 logic/ninfee-msd/FE_interface.vhd
-logic/ninfee-msd/multiADC_interface.vhd
+#logic/ninfee-msd/multiADC_interface.vhd
 logic/ninfee-msd/multiAdcPlaneInterface.vhd
+logic/ninfee-msd/multiLTC2313_interface.vhd

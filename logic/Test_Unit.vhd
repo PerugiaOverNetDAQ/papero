@@ -9,6 +9,8 @@ library IEEE;
 use IEEE.STD_LOGIC_1164.all;
 use IEEE.STD_LOGIC_UNSIGNED.all;
 use IEEE.NUMERIC_STD.all;
+
+use work.basic_package.all;
 use work.paperoPackage.all;
 
 
@@ -164,8 +166,8 @@ begin
     port map(
       iCLK      => iCLK,
       iRST      => sInternalReset_ps,
-      iPRBS8_en => sPRBS8_en,
-      oDATA     => sPRBS8_out
+      iEN       => sPRBS8_en,
+      oPRBS     => sPRBS8_out
       );
 
   -- Generazione del dato pseudo-casuale a 32 bit nella PRIMA modalità operativa
@@ -173,8 +175,8 @@ begin
     port map(
       iCLK       => iCLK,
       iRST       => sInternalReset_ps,
-      iPRBS32_en => sPRBS32_en,
-      oDATA      => sPRBS32_out1
+      iEN        => sPRBS32_en,
+      oPRBS      => sPRBS32_out1
       );
 
   -- Generazione del dato pseudo-casuale a 32 bit nella SECONDA modalità operativa
@@ -182,8 +184,8 @@ begin
     port map(
       iCLK       => iCLK,
       iRST       => sInternalReset_ps,
-      iPRBS32_en => sPRBS32_en2,
-      oDATA      => sData2
+      iEN        => sPRBS32_en2,
+      oPRBS      => sData2
       );
 
   -- Generazione del dato pseudo-casuale a 32 bit nella TERZA modalità operativa
@@ -191,8 +193,8 @@ begin
     port map(
       iCLK       => iCLK,
       iRST       => sInternalReset_ps,
-      iPRBS32_en => sPRBS32_en3,
-      oDATA      => sData3
+      iEN        => sPRBS32_en3,
+      oPRBS      => sData3
       );
 
 

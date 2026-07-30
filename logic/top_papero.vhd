@@ -694,7 +694,7 @@ begin
       signal_in => sRegArray(rGOTO_STATE)(2),
       pulse_out => sRegArrayRst
       );
-  sRunMode                 <= sRegArray(rGOTO_STATE)(4);
+      
   sDetIntfEn               <= not sRegArray(rUNITS_EN)(1);
   sDetIntfCfg.feClkDuty    <= sRegArray(rFE_CLK_PARAM)(31 downto 16);
   sDetIntfCfg.feClkDiv     <= sRegArray(rFE_CLK_PARAM)(15 downto 0);

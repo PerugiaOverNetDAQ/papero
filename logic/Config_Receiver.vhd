@@ -168,13 +168,17 @@ begin
       );
 
   -- Instanziamento dell'HighHold per evitare che il "Wait_Request" rimanga alto per un solo ciclo di clock (ma almeno 2), situazione potenzialmente dannosa per la macchina.
+  -- Realign with BASIC PACKAGE HighHold
   Hold_Wait_Request : HighHold
-    generic map(channels => 1, BAS_vs_BSS => '1')
+    generic map(
+      pCH => 1
+    )
     port map(
-      CLK_in         => CR_CLK_in,
-      DATA_in(0)     => fifo_wait_request,
-      DELAY_1_out(0) => fifo_wait_request_HH
-      );
+      iCLK   => CR_CLK_in,
+      iDATA(0)  => fifo_wait_request,
+      oDEL_1(0) => fifo_wait_request_HH
+    );
+  
 
   -- Instanziamento del WR_Timer per generare gli impulsi di Read_Enable specifici per lo stato di "ACQUISITION".
   timer : WR_Timer

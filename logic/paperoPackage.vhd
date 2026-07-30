@@ -98,7 +98,7 @@ package paperoPackage is
   constant rPIUMONE          : natural := 15;
 
   --!Fast-data packet format
-  constant cFASTDATA_OVERHEAD    : natural := 10;
+  constant cFASTDATA_OVERHEAD    : natural := cHDR_WORDS;
   constant cTRIG_TYPE_PEDESTAL   : std_logic_vector(7 downto 0) := x"80";
   constant cTRIG_TYPE_SIGMA_RAW  : std_logic_vector(7 downto 0) := x"40";
   constant cTRIG_TYPE_SIGMA      : std_logic_vector(7 downto 0) := x"20";
@@ -191,7 +191,7 @@ package paperoPackage is
 
   --!Metadata for the F2H Fast TX
   type tF2hMetadata is record
-    pktLen  : std_logic_vector(31 downto 0);  --!Packet Length: Number of 32-bit payload words + 10
+    pktLen  : std_logic_vector(31 downto 0);  --!Packet Length: Number of 32-bit payload words + cHDR_WORDS
     trigNum : std_logic_vector(31 downto 0);  --!Trigger Counter
     detId   : std_logic_vector(15 downto 0);  --!Detector ID
     trigId  : std_logic_vector(15 downto 0);  --!Trigger ID
