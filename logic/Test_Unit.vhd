@@ -21,7 +21,7 @@ entity Test_Unit is
     iRST            : in  std_logic;    -- Porta per il reset
     iEN             : in  std_logic;  -- Porta per l'abilitazione della unità di test
     iSETTING_CONFIG : in  std_logic_vector(1 downto 0);  -- Configurazione modalità operativa: "01"-->dati pseudocasuali generati con un tempo pseudocasuale, "10" dati pseudocasuali generati negli istanti di trigger, "11" dati pseudocasuali generati di continuo (rate massima)
-    iSETTING_LENGTH : in  std_logic_vector(31 downto 0);  -- Lunghezza del pacchetto --> Number of 32-bit payload words + 10 
+    iSETTING_LENGTH : in  std_logic_vector(31 downto 0);  -- Lunghezza del pacchetto --> Number of 32-bit payload words + cFASTDATA_OVERHEAD
     iTRIG           : in  std_logic;  -- Ingresso per il segnale di trigger proveniente dalla trigBusyLogic
     oDATA           : out std_logic_vector(31 downto 0);  -- Numero binario a 32 bit pseudo-casuale
     oDATA_VALID     : out std_logic;  -- Segnale che attesta la validità dei dati in uscita dalla Test_Unit. Se oDATA_VALID=1 --> il valore di "oDATA" è consistente
@@ -331,7 +331,7 @@ begin
   begin
     if rising_edge(iCLK) then
       if ((sEN1_R = '1') or (sPacket_full1 = '1') or (sPS = STANDBY)) then
-        sLength1 <= iSETTING_LENGTH - 10;  -- Se qualcuno abilita la Test_Unit, oppure si è appena concluso l'invio dell'ultima word necessaria per formare un pacchetto, aggiorna lunghezza desiderata
+        sLength1 <= iSETTING_LENGTH - cFASTDATA_OVERHEAD;  -- Aggiorna il numero di word del payload
       end if;
     end if;
   end process;
@@ -393,7 +393,7 @@ begin
         sWordCounter2 <= sWordCounter2 - 1;  -- Se il contatore delle parole mancanti è maggiore di zero, estrai un dato dal PRBS32 e decrementa il contatore stesso
         sPRBS32_en2   <= '1';
       elsif (sTrig_R = '1') then
-        sWordCounter2 <= iSETTING_LENGTH - 10;  -- Se qualcuno abilita la Test_Unit, memorizza la lunghezza desiderata per il pacchetto
+        sWordCounter2 <= iSETTING_LENGTH - cFASTDATA_OVERHEAD;  -- Memorizza il numero di word del payload
         sPRBS32_en2   <= '0';
       else
         sWordCounter2 <= (others => '0');  -- Altrimenti, resetta tutto

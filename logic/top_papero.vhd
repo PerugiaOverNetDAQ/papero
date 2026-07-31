@@ -232,7 +232,9 @@ architecture std of top_papero is
 
   -- HV DACs and ADCs
   signal sbiasStart : std_logic;
+  signal sBiasButtonSynch : std_logic;
   signal sHvRqt : std_logic_vector(1 downto 0);
+  signal sHvRqtPrev : std_logic_vector(1 downto 0);
   signal sHvAck : std_logic_vector(1 downto 0);
   signal sHvErr : std_logic_vector(1 downto 0);
   signal sHvMon : std_logic_vector(cREG_WIDTH-1 downto 0);
@@ -784,8 +786,25 @@ begin
               sDrainIdleSeen    <= '0';
               sCalDoneLatched   <= '0';
 
-            when RUN_CAL_ARM | RUN_CALIBRATION =>
-              -- Attesa del confine sicuro
+            when RUN_CAL_ARM =>
+              -- Nessun trigger può essere stato accettato durante l'arm.
+              -- Una richiesta di STOP può quindi annullare direttamente una
+              -- calibrazione non ancora partita senza attendere TRIG_READY.
+              sRunMode        <= '1';
+              sCommandHold    <= '1';
+              sCalibrationRun <= '1';
+              sDrainIdleSeen  <= '0';
+              if sCalOperationDump = '1' then
+                -- Il dump non usa trigger e può essere già in corso.
+                sRunState <= RUN_STOP_CAL;
+              else
+                sCalAbort       <= '1';
+                sCalDoneLatched <= '0';
+                sRunState       <= RUN_STOP_DRAIN;
+              end if;
+
+            when RUN_CALIBRATION =>
+              -- Attesa del confine sicuro tra due trigger di calibrazione.
               sRunMode        <= '1';
               sCommandHold    <= '1';
               sCalibrationRun <= '1';
@@ -936,15 +955,28 @@ begin
 
             when RUN_CAL_ARM =>
               sRunMode        <= '1';
-              sCommandHold    <= '1'; -- Non genera trigger prima che CAL_ENABLE si sia propagato.
+              sCommandHold    <= '1'; -- Nessun trigger prima dell'ack CALIB_TRIG_READY.
               sCalibrationRun <= '1';
-              if sCalArmCounter = cCAL_REQUEST_ARM_CYCLES-1 then
-                -- Dump dalle RAM interne
-                -- Nuova calibrazione con trigger software
-                sCommandHold <= sCalOperationDump;
-                sRunState    <= RUN_CALIBRATION;
+
+              if sCalOperationDump = '1' then
+                -- Il dump non richiede CAL_ENABLE/CALIB_TRIG_READY: conserva
+                -- l'attesa fissa necessaria a propagare CAL_DUMP.
+                if sCalArmCounter = cCAL_REQUEST_ARM_CYCLES-1 then
+                  sCalArmCounter <= 0;
+                  sRunState      <= RUN_CALIBRATION;
+                else
+                  sCalArmCounter <= sCalArmCounter + 1;
+                end if;
               else
-                sCalArmCounter <= sCalArmCounter + 1;
+                -- Mantieni la richiesta a livello finché LadderWrapper non
+                -- conferma di averla memorizzata. Solo allora libera i trigger.
+                sCalEnable <= '1';
+                if sCalibTrigReady = '1' then
+                  sCalEnable      <= '0';
+                  sCommandHold    <= '0';
+                  sCalArmCounter  <= 0;
+                  sRunState       <= RUN_CALIBRATION;
+                end if;
               end if;
 
             when RUN_CALIBRATION =>
@@ -1084,7 +1116,18 @@ begin
       oLED  => LED(3 downto 0)
       );
 
-  --!@brief Temporary: generate reset pulse for starting bias voltage. @todo
+  biasStartSynch : altera_std_synchronizer
+    generic map (
+      depth => 3
+      )
+    port map (
+      clk     => sClk,
+      reset_n => hps_fpga_reset_n_synch,
+      din     => fpga_debounced_buttons_n(0),
+      dout    => sBiasButtonSynch
+      );
+
+  --!@brief Generate the pulse for starting bias voltage.
   biasStartEdge : altera_edge_detector
     generic map(
       PULSE_EXT             => 5,
@@ -1094,11 +1137,22 @@ begin
     port map (
       clk       => sClk,
       rst_n     => hps_fpga_reset_n_synch,
-      signal_in => fpga_debounced_buttons_n(0),
+      signal_in => sBiasButtonSynch,
       pulse_out => sbiasStart
       );
-  
-  sHvRqt(1) <= sRegArray(rHV_PARAM)(31) or sbiasStart; --@todo Remove the override with the button, it's just for testing purposes
+
+  HV_REQUEST_EDGE_PROC : process(sClk)
+  begin
+    if rising_edge(sClk) then
+      if hps_fpga_reset_n_synch = '0' or sDetIntfRst = '1' then
+        sHvRqtPrev <= (others => '0');
+      else
+        sHvRqtPrev <= sRegArray(rHV_PARAM)(31) & sRegArray(rHV_PARAM)(15);
+      end if;
+    end if;
+  end process HV_REQUEST_EDGE_PROC;
+
+  sHvRqt(1) <= (sRegArray(rHV_PARAM)(31) and not sHvRqtPrev(1)) or sbiasStart;
   sHvValue1 <= sRegArray(rHV_PARAM)(25 downto 16);
   sHvMon(31) <= sHvAck(1);
   sHvMon(30) <= sHvErr(1);
@@ -1114,10 +1168,11 @@ begin
       oSCL  => oVSET_SCL(1)
     );
   
-  sHvRqt(0) <= sRegArray(rHV_PARAM)(15) or sbiasStart; --@todo Remove the override with the button, it's just for testing purposes;
+  sHvRqt(0) <= (sRegArray(rHV_PARAM)(15) and not sHvRqtPrev(0)) or sbiasStart;
   sHvValue0 <= sRegArray(rHV_PARAM)(9 downto 0);
   sHvMon(15) <= sHvAck(0);
   sHvMon(14) <= sHvErr(0);
+  sHvMon(13 downto 12) <= (others => '0');
   HV_0_DAC : LT1663Intf
     port map(
       iCLK  => sClk,

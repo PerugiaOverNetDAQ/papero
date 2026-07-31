@@ -121,6 +121,8 @@ architecture std of TdaqModule is
   signal sPendingTrigId  : std_logic_vector(15 downto 0);
   signal sPendingIntTime : std_logic_vector(63 downto 0);
   signal sPendingExtTime : std_logic_vector(63 downto 0);
+  signal sPendingBiasSet : std_logic_vector(31 downto 0);
+  signal sPendingBiasCur : std_logic_vector(31 downto 0);
   signal sPendingValid   : std_logic;
 
 
@@ -141,7 +143,7 @@ begin
   -- bit0: 0 | esterno || 1 | interno
   sTrigCfg <= sRegArray(rTRIGBUSY_LOGIC)(31 downto 2) & (not iCALIBRATION_ACTIVE) & sRegArray(rTRIGBUSY_LOGIC)(0);
 
-  -- Legacy e Test Unit mantengono la lunghezza configurata. Per i pacchetti di LW si usa invece il numero di parole realmente scritte nella FIFO, al quale si aggiunge l'overhead di 10
+  -- Legacy e Test Unit mantengono la lunghezza configurata. Per i pacchetti di LW si usa il numero di parole realmente scritte nella FIFO più cFASTDATA_OVERHEAD.
   sPacketLength <= sRegArray(rPKT_LEN) when sTestUnitEn = '1' or iTRIG_TYPE = cTRIG_TYPE_LEGACY else std_logic_vector(unsigned(iPAYLOAD_WORDS) + to_unsigned(cFASTDATA_OVERHEAD, cREG_WIDTH));
   sPacketTrigType <= cTRIG_TYPE_LEGACY when sTestUnitEn = '1' else iTRIG_TYPE;
 
@@ -156,8 +158,8 @@ begin
   sTrigType <= sPacketTrigType;
   sMetaDataIn.intTime <= sPendingIntTime(63 downto 8) & sTrigType when sPendingValid = '1' else iINT_TS(31 downto 0) & '1' & "0000000" & sSsId & x"00" & sTrigType;
   sMetaDataIn.extTime <= sPendingExtTime when sPendingValid = '1' else iEXT_TS;
-  sMetaDataIn.biasSet <= sRegArray(rHV_PARAM);
-  sMetaDataIn.biasCur <= iHV_MON; -- FIXME: to check for metadata pending valid.
+  sMetaDataIn.biasSet <= sPendingBiasSet when sPendingValid = '1' else sRegArray(rHV_PARAM);
+  sMetaDataIn.biasCur <= sPendingBiasCur when sPendingValid = '1' else iHV_MON;
 
   -- Il trigger viene conservato senza accodare subito un descrittore
   METADATA_TRIGGER_LATCH : process(iCLK)
@@ -169,6 +171,8 @@ begin
         sPendingTrigId  <= (others => '0');
         sPendingIntTime <= (others => '0');
         sPendingExtTime <= (others => '0');
+        sPendingBiasSet <= (others => '0');
+        sPendingBiasCur <= (others => '0');
         sPendingValid   <= '0';
       elsif sTrig = '1' then
         sPendingTrigNum <= sTrigCount;
@@ -179,6 +183,8 @@ begin
         sPendingIntTime <= iINT_TS(31 downto 0) & '1' & "0000000" &
                            sSsId & x"00" & x"00";
         sPendingExtTime <= iEXT_TS;
+        sPendingBiasSet <= sRegArray(rHV_PARAM);
+        sPendingBiasCur <= iHV_MON;
         sPendingValid   <= '1';
       end if;
     end if;

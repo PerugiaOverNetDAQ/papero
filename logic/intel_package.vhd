@@ -138,6 +138,17 @@ package intel_package is
       );
   end component debounce;
 
+  --!@brief Single-bit clock-domain crossing synchronizer
+  component altera_std_synchronizer generic (
+    depth : integer := 3
+    ); port (
+      clk     : in  std_logic;
+      reset_n : in  std_logic;
+      din     : in  std_logic;
+      dout    : out std_logic
+      );
+  end component altera_std_synchronizer;
+
   --!@brief General-purpose edge detector developed by Altera
   component altera_edge_detector generic (
     PULSE_EXT             : natural := 0;  -- 0, 1 = edge detection generate single cycle pulse, >1 = pulse extended for specified clock cycle
