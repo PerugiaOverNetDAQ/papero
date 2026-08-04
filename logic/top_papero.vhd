@@ -721,62 +721,73 @@ begin
   begin
     if rising_edge(sClk) then
       if hps_fpga_reset_n_synch = '0' then
-        sStartPrev       <= '0'; -- Stato precedente del bit START
-        sThrApplyPending <= '0'; -- Nessuna applicazione soglie pendente
-        sLTH             <= cLTH; -- Soglia bassa predefinita
-        sHTH             <= cHTH; -- Soglia alta predefinita
-        sDaqMode         <= "00"; -- Modalità DAQ legacy
-        sEventEnable     <= '0'; -- Eventi disabilitati
-        sRunMode         <= '0'; -- Trigger disabilitati e FIFO metadati in reset
-        sCommandHold     <= '0'; -- Nessun busy aggiuntivo
-        sCalEnable       <= '0'; -- Nessuna richiesta di calibrazione
-        sCalDump         <= '0'; -- Nessun dump
-        sCalSave         <= '0'; -- Nessun salvataggio
-        sCalAbort        <= '0'; -- Nessun abort
+        sStartPrev        <= '0';
+        sThrApplyPending  <= '0';
+        sLTH              <= cLTH;
+        sHTH              <= cHTH;
+        sDaqMode          <= "00";
+        sEventEnable      <= '0';
+        sRunMode          <= '0';
+        sCommandHold      <= '0';
+        sCalEnable        <= '0';
+        sCalDump          <= '0';
+        sCalSave          <= '0';
+        sCalAbort         <= '0';
         sCalOperationDump <= '0';
-        sCalibrationRun  <= '0'; -- Calibrazione non attiva
-        sCalArmCounter   <= 0; -- Contatore di arm azzerato
-        sDrainIdleSeen   <= '0';
-        sCalDoneLatched  <= '0';
-        sRunState        <= RUN_IDLE; -- Comando non attivo
+        sCalibrationRun   <= '0';
+        sCalArmCounter    <= 0;
+        sDrainIdleSeen    <= '0';
+        sCalDoneLatched   <= '0';
+        sRunState         <= RUN_IDLE;
+
       elsif sRegArrayRst = '1' then
-        sStartPrev       <= '0'; 
-        sThrApplyPending <= '1'; -- Riapplica una volta le soglie predefinite a LadderWrapper
-        sLTH             <= cLTH; 
-        sHTH             <= cHTH;
-        sDaqMode         <= "00";
-        sEventEnable     <= '0'; 
-        sRunMode         <= '0'; 
-        sCommandHold     <= '0'; 
-        sCalEnable       <= '0';
-        sCalDump         <= '0';
-        sCalSave         <= '0';
-        sCalAbort        <= '0';
+        sStartPrev        <= '0';
+        sThrApplyPending  <= '1';
+        sLTH              <= cLTH;
+        sHTH              <= cHTH;
+        sDaqMode          <= "00";
+        sEventEnable      <= '0';
+        sRunMode          <= '0';
+        sCommandHold      <= '0';
+        sCalEnable        <= '0';
+        sCalDump          <= '0';
+        sCalSave          <= '0';
+        sCalAbort         <= '0';
         sCalOperationDump <= '0';
-        sCalibrationRun  <= '0'; 
-        sCalArmCounter   <= 0; 
-        sDrainIdleSeen   <= '0';
-        sCalDoneLatched  <= '0';
-        sRunState        <= RUN_IDLE; 
+        sCalibrationRun   <= '0';
+        sCalArmCounter    <= 0;
+        sDrainIdleSeen    <= '0';
+        sCalDoneLatched   <= '0';
+        sRunState         <= RUN_IDLE;
+
       else
+        -- Def 0 values
         sCalEnable <= '0';
         sCalDump   <= '0';
         sCalAbort  <= '0';
 
+        -- Memorizza CalibDone fino a quando non viene utilizzata da FSM
         if sCalibDone = '1' then
           sCalDoneLatched <= '1';
         end if;
 
+        -- Con THR_Valid applico le soglie una sola volta
         if sThrApplyPending = '1' then
           sThrApplyPending <= '0';
         end if;
 
+        -- Riabilita rising edge START
         if sRegArray(rGOTO_STATE)(cRUN_REQUEST_BIT) = '0' then
-          sStartPrev      <= '0';
+          sStartPrev <= '0';
+        end if;
 
-          case sRunState is
-            when RUN_IDLE =>
-              -- Reset dei metadati
+        case sRunState is
+
+          -- Nessun comando attivo
+          -- Un RUN_REQUEST nuovo campiona la configurazione e sceglie il percorso associato: calibrazione, dump, eventi oppure attesa dello STOP
+          when RUN_IDLE =>
+            if sRegArray(rGOTO_STATE)(cRUN_REQUEST_BIT) = '0' then
+              -- Pulizia conclusiva quando START e' basso.
               sRunMode          <= '0';
               sCommandHold      <= '0';
               sEventEnable      <= '0';
@@ -787,165 +798,87 @@ begin
               sDrainIdleSeen    <= '0';
               sCalDoneLatched   <= '0';
 
-            when RUN_CAL_ARM =>
-              -- Nessun trigger può essere stato accettato durante l'arm.
-              -- Una richiesta di STOP può quindi annullare direttamente una
-              -- calibrazione non ancora partita senza attendere TRIG_READY.
-              sRunMode        <= '1';
-              sCommandHold    <= '1';
-              sCalibrationRun <= '1';
-              sDrainIdleSeen  <= '0';
-              if sCalOperationDump = '1' then
-                -- Il dump non usa trigger e può essere già in corso.
-                sRunState <= RUN_STOP_CAL;
-              else
-                sCalAbort       <= '1';
-                sCalDoneLatched <= '0';
-                sRunState       <= RUN_STOP_DRAIN;
+            elsif sStartPrev = '0' then
+              -- risingEdge START: campiona tutti i campi del comando
+              sStartPrev        <= '1';
+              sDaqMode          <= sRegArray(rGOTO_STATE)(cDAQ_MODE_MSB downto cDAQ_MODE_LSB);
+              sEventEnable      <= sRegArray(rGOTO_STATE)(cEVENT_ENABLE_BIT);
+              sCalSave          <= sRegArray(rGOTO_STATE)(cSAVE_CALIB_BIT);
+              sRunMode          <= '1';
+              sCalArmCounter    <= 0;
+              sDrainIdleSeen    <= '0';
+              sCalDoneLatched   <= '0';
+
+              -- Le soglie sono acquisite insieme al comando e applicate al clock successivo
+              if sRegArray(rGOTO_STATE)(cTHR_VALID_BIT) = '1' then
+                sLTH             <= sRegArray(rTHR_PARAM)(15 downto 0);
+                sHTH             <= sRegArray(rTHR_PARAM)(31 downto 16);
+                sThrApplyPending <= '1';
               end if;
 
-            when RUN_CALIBRATION =>
-              -- Attesa del confine sicuro tra due trigger di calibrazione.
-              sRunMode        <= '1';
-              sCommandHold    <= '1';
-              sCalibrationRun <= '1';
-              sDrainIdleSeen  <= '0';
-              if sCalibDone = '1' then
-                sCalDoneLatched <= '0';
-                sRunState       <= RUN_STOP_DRAIN;
-              else
-                sRunState <= RUN_STOP_CAL;
-              end if;
+              -- Priorità del comando:
+              --   1. calibrazione nuova
+              --   2. dump di una calibrazione valida
+              --   3. acquisizione eventi
+              --   4. nessuna operazione, attesa dello STOP
+              if sRegArray(rGOTO_STATE)(cFORCE_CALIB_BIT) = '1' or (sRegArray(rGOTO_STATE)(cAUTO_CALIB_BIT) = '1' and sCalibValid = '0') then
+                sCommandHold      <= '1';
+                sCalEnable        <= '1';
+                sCalOperationDump <= '0';
+                sCalibrationRun   <= '1';
+                sRunState         <= RUN_CAL_ARM;
 
-            when RUN_STOP_CAL =>
-              sRunMode        <= '1';
-              sCommandHold    <= '1';
-              sCalibrationRun <= '1';
-              sDrainIdleSeen  <= '0';
+              elsif sCalibValid = '1' and sRegArray(rGOTO_STATE)(cSAVE_CALIB_BIT) = '1' then
+                sCommandHold      <= '1';
+                sCalDump          <= '1';
+                sCalOperationDump <= '1';
+                sCalibrationRun   <= '1';
+                sRunState         <= RUN_CAL_ARM;
 
-              if sCalibDone = '1' or sCalDoneLatched = '1' then
-                -- Stop dopo dump o flag
-                sCalDoneLatched <= '0';
-                sRunState       <= RUN_STOP_DRAIN;
-              elsif sCalOperationDump = '0' and sCalibTrigReady = '1' then
-                -- Abort tra trigger senza dati parziali
-                -- CAL_RAM preservata
-                sCalAbort       <= '1';
-                sCalDoneLatched <= '0';
-                sRunState       <= RUN_STOP_DRAIN;
-              end if;
+              elsif sRegArray(rGOTO_STATE)(cEVENT_ENABLE_BIT) = '1' then
+                sCalOperationDump <= '0';
+                sCalibrationRun   <= '0';
 
-            when RUN_STOP_DRAIN =>
-              sRunMode     <= '1'; -- Metadati attivi
-              sCommandHold <= '1'; -- Nuovi trigger bloccati
-
-              if sDetectorPipelineIdle = '1' and sTdaqDataIdle = '1' then
-                if sDrainIdleSeen = '1' then
-                  -- Due campioni idle evitano conflitti
-                  sRunMode          <= '0';
-                  sCommandHold      <= '0';
-                  sEventEnable      <= '0';
-                  sCalSave          <= '0';
-                  sCalOperationDump <= '0';
-                  sCalibrationRun   <= '0';
-                  sCalArmCounter    <= 0;
-                  sDrainIdleSeen    <= '0';
-                  sCalDoneLatched   <= '0';
-                  sRunState         <= RUN_IDLE;
+                if sRegArray(rGOTO_STATE)(cTHR_VALID_BIT) = '1' then
+                  -- Attende la propagazione di K1 e K2 per clustering.
+                  sCommandHold <= '1';
+                  sRunState    <= RUN_EVENT_ARM;
                 else
-                  sDrainIdleSeen <= '1';
+                  sCommandHold <= '0';
+                  sRunState    <= RUN_EVENTS;
                 end if;
+
               else
-                sDrainIdleSeen <= '0';
+                sCommandHold    <= '1';
+                sCalibrationRun <= '0';
+                sRunState       <= RUN_WAIT_STOP;
               end if;
 
-            when others =>
-              -- Svuotamento del lavoro accettato
-              -- Calibrazione attiva fino al metadato finale
+            else
+              -- RUN_REQUEST è ancora alto, ma nessun nuovo comando può partire finchè non arriva uno STOP
+              sRunMode        <= '0';
+              sCommandHold    <= '0';
+              sCalibrationRun <= '0';
+              sDrainIdleSeen  <= '0';
+            end if;
+
+          -- Attesa fissa dopo l'applicazione delle soglie e prima di
+          -- accettare il primo trigger evento. IN LW servono gli ARM_CYCLE per applicare le soglie.
+          -- TODO: Rimuovere questi ARM CYCLE e rendere l'applicazione istantanea
+          when RUN_EVENT_ARM =>
+            if sRegArray(rGOTO_STATE)(cRUN_REQUEST_BIT) = '0' then
+              -- Il lavoro gia' accettato viene drenato prima di tornare IDLE.
               sRunMode       <= '1';
               sCommandHold   <= '1';
               sCalArmCounter <= 0;
               sDrainIdleSeen <= '0';
               sRunState      <= RUN_STOP_DRAIN;
-          end case;
-
-        elsif sStartPrev = '0' and sRunState = RUN_IDLE then
-          -- START: campiona la configurazione del comando
-          sStartPrev   <= '1';
-          -- DAQ MODE
-          sDaqMode     <= sRegArray(rGOTO_STATE)(cDAQ_MODE_MSB downto cDAQ_MODE_LSB); 
-          -- EVT EN LW. In LEGACY MODE ESCONO UGUALE
-          sEventEnable <= sRegArray(rGOTO_STATE)(cEVENT_ENABLE_BIT);
-          sCalSave     <= sRegArray(rGOTO_STATE)(cSAVE_CALIB_BIT);
-          sRunMode     <= '1';
-          sCalArmCounter <= 0;
-          sDrainIdleSeen <= '0';
-          sCalDoneLatched <= '0';
-
-          -- Carica le TH
-          if sRegArray(rGOTO_STATE)(cTHR_VALID_BIT) = '1' then
-            sLTH <= sRegArray(rTHR_PARAM)(15 downto 0);
-            sHTH <= sRegArray(rTHR_PARAM)(31 downto 16);
-            -- Valori applicati al clock successivo
-            sThrApplyPending <= '1';
-          end if;
-
-          -- Nuova calibrazione forzata o automatica senza dati validi
-          if sRegArray(rGOTO_STATE)(cFORCE_CALIB_BIT) = '1' or (sRegArray(rGOTO_STATE)(cAUTO_CALIB_BIT) = '1' and sCalibValid = '0') then
-            sCommandHold    <= '1';
-            sCalEnable      <= '1';
-            sCalOperationDump <= '0';
-            sCalibrationRun <= '1';
-            sRunState       <= RUN_CAL_ARM;
-
-          -- Dump letto dalle RAM
-          -- Nessun trigger di calibrazione
-          elsif sCalibValid = '1' and sRegArray(rGOTO_STATE)(cSAVE_CALIB_BIT) = '1' then
-            sCommandHold      <= '1';
-            sCalDump          <= '1';
-            sCalOperationDump <= '1';
-            sCalibrationRun   <= '1';
-            sRunState         <= RUN_CAL_ARM;
-
-          -- Calibrazione valida senza salvataggio o solo eventi
-          elsif sRegArray(rGOTO_STATE)(cEVENT_ENABLE_BIT) = '1' then
-            sCalOperationDump <= '0';
-            sCalibrationRun <= '0';
-            if sRegArray(rGOTO_STATE)(cTHR_VALID_BIT) = '1' then
-              -- Attesa di K1 e K2 prima del primo trigger
-              sCommandHold <= '1';
-              sRunState    <= RUN_EVENT_ARM;
             else
-              sCommandHold <= '0';
-              sRunState    <= RUN_EVENTS;
-            end if;
-          -- Dump non valido senza dati fino a STOP
-          else
-            sCommandHold    <= '1';
-            sCalibrationRun <= '0';
-            sRunState       <= RUN_WAIT_STOP;
-          end if;
-
-        else
-          -- START '1': exec comando su rising edge
-          case sRunState is
-            when RUN_IDLE =>
-              sRunMode        <= '0';
-              sCommandHold    <= '0';
-              sCalibrationRun <= '0';
-              sDrainIdleSeen  <= '0';
-
-            when RUN_EVENTS =>
-              sRunMode        <= '1'; -- Continua l'acquisizione fino a STOP.
-              sCommandHold    <= '0'; -- Consente nuovi trigger.
-              sCalibrationRun <= '0';
-              sDrainIdleSeen  <= '0';
-
-            when RUN_EVENT_ARM =>
               sRunMode        <= '1';
               sCommandHold    <= '1';
               sCalibrationRun <= '0';
               sDrainIdleSeen  <= '0';
+
               if sCalArmCounter = cCAL_REQUEST_ARM_CYCLES-1 then
                 sCommandHold   <= '0';
                 sCalArmCounter <= 0;
@@ -953,15 +886,49 @@ begin
               else
                 sCalArmCounter <= sCalArmCounter + 1;
               end if;
+            end if;
 
-            when RUN_CAL_ARM =>
+          -- Acquisizione eventi: i trigger restano abilitati fino a quando non arriva STOP.
+          when RUN_EVENTS =>
+            if sRegArray(rGOTO_STATE)(cRUN_REQUEST_BIT) = '0' then
+              sRunMode       <= '1';
+              sCommandHold   <= '1';
+              sCalArmCounter <= 0;
+              sDrainIdleSeen <= '0';
+              sRunState      <= RUN_STOP_DRAIN;
+            else
               sRunMode        <= '1';
-              sCommandHold    <= '1'; -- Nessun trigger prima dell'ack CALIB_TRIG_READY.
+              sCommandHold    <= '0';
+              sCalibrationRun <= '0';
+              sDrainIdleSeen  <= '0';
+            end if;
+
+          -- Preparazione della calibrazione
+          -- Per una calibrazione nuova CAL_ENABLE resta alto fino a READY
+          -- per un dump viene rispettata soltanto l'attesa fissa per applicazione delle thr.
+          when RUN_CAL_ARM =>
+            if sRegArray(rGOTO_STATE)(cRUN_REQUEST_BIT) = '0' then
+              sRunMode        <= '1';
+              sCommandHold    <= '1';
+              sCalibrationRun <= '1';
+              sDrainIdleSeen  <= '0';
+
+              if sCalOperationDump = '1' then
+                -- Il dump può essere già in corso e deve fermarsi su DONE
+                sRunState <= RUN_STOP_CAL;
+              else
+                -- Nessun trigger è stato ancora accettato: abort immediato
+                sCalAbort       <= '1';
+                sCalDoneLatched <= '0';
+                sRunState       <= RUN_STOP_DRAIN;
+              end if;
+
+            else
+              sRunMode        <= '1';
+              sCommandHold    <= '1';
               sCalibrationRun <= '1';
 
               if sCalOperationDump = '1' then
-                -- Il dump non richiede CAL_ENABLE/CALIB_TRIG_READY: conserva
-                -- l'attesa fissa necessaria a propagare CAL_DUMP.
                 if sCalArmCounter = cCAL_REQUEST_ARM_CYCLES-1 then
                   sCalArmCounter <= 0;
                   sRunState      <= RUN_CALIBRATION;
@@ -969,43 +936,68 @@ begin
                   sCalArmCounter <= sCalArmCounter + 1;
                 end if;
               else
-                -- Mantieni la richiesta a livello finché LadderWrapper non
-                -- conferma di averla memorizzata. Solo allora libera i trigger.
                 sCalEnable <= '1';
+
                 if sCalibTrigReady = '1' then
-                  sCalEnable      <= '0';
-                  sCommandHold    <= '0';
-                  sCalArmCounter  <= 0;
-                  sRunState       <= RUN_CALIBRATION;
+                  sCalEnable     <= '0';
+                  sCommandHold   <= '0';
+                  sCalArmCounter <= 0;
+                  sRunState      <= RUN_CALIBRATION;
                 end if;
               end if;
+            end if;
 
-            when RUN_CALIBRATION =>
+          -- Calibrazione o dump in corso
+          when RUN_CALIBRATION =>
+            if sRegArray(rGOTO_STATE)(cRUN_REQUEST_BIT) = '0' then
+              sRunMode        <= '1';
+              sCommandHold    <= '1';
+              sCalibrationRun <= '1';
+              sDrainIdleSeen  <= '0';
+
+              if sCalibDone = '1' then
+                -- DONE ha priorita
+                sCalDoneLatched <= '0';
+                sRunState       <= RUN_STOP_DRAIN;
+              else
+                -- Attende un confine sicuro prima di interrompere
+                sRunState <= RUN_STOP_CAL;
+              end if;
+
+            else
               sRunMode        <= '1';
               sCommandHold    <= sCalOperationDump;
               sCalibrationRun <= '1';
 
-              -- Completamento con SAVE o NOSAVE
               if sCalibDone = '1' then
                 sCommandHold    <= '1';
                 sCalDoneLatched <= '0';
                 sDrainIdleSeen  <= '0';
                 sRunState       <= RUN_CAL_DRAIN;
               end if;
+            end if;
 
-            when RUN_CAL_DRAIN =>
-              sRunMode        <= '1'; -- Mantiene valida la FIFO metadati durante il drenaggio
-              sCommandHold    <= '1'; -- Non accetta nuovi trigger
+          -- La calibrazione è terminata normalmente. detector e TDAQ devono
+          -- risultare entrambi idle per due clock consecutivi
+          when RUN_CAL_DRAIN =>
+            if sRegArray(rGOTO_STATE)(cRUN_REQUEST_BIT) = '0' then
+              sRunMode       <= '1';
+              sCommandHold   <= '1';
+              sCalArmCounter <= 0;
+              sDrainIdleSeen <= '0';
+              sRunState      <= RUN_STOP_DRAIN;
+            else
+              sRunMode        <= '1';
+              sCommandHold    <= '1';
               sCalibrationRun <= '1';
 
-              -- Doppio idle di detector e Tdaq
-              -- Attesa del trasferimento finale da LadderWrapper
               if sDetectorPipelineIdle = '1' and sTdaqDataIdle = '1' then
                 if sDrainIdleSeen = '1' then
                   sDrainIdleSeen    <= '0';
                   sCalibrationRun   <= '0';
                   sCalOperationDump <= '0';
-                  sCalSave          <= '0'; -- RAW eventi disabilitato
+                  sCalSave          <= '0';
+
                   if sEventEnable = '1' then
                     sCommandHold <= '0';
                     sRunState    <= RUN_EVENTS;
@@ -1019,63 +1011,82 @@ begin
               else
                 sDrainIdleSeen <= '0';
               end if;
+            end if;
 
-            when RUN_WAIT_STOP =>
-              sRunMode        <= '1'; -- Il comando resta attivo finché il software non abbassa START
-              sCommandHold    <= '1'; -- Non sono richiesti altri trigger
-              sCalibrationRun <= '0';
-              sDrainIdleSeen  <= '0';
-
-            when RUN_STOP_CAL =>
-              -- Nuovo START accodato
-              -- Comando acquisito dopo RUN_IDLE
+          -- Il comando non richiede altri trigger e resta attivo fino a STOP
+          when RUN_WAIT_STOP =>
+            if sRegArray(rGOTO_STATE)(cRUN_REQUEST_BIT) = '0' then
+              sRunMode       <= '1';
+              sCommandHold   <= '1';
+              sCalArmCounter <= 0;
+              sDrainIdleSeen <= '0';
+              sRunState      <= RUN_STOP_DRAIN;
+            else
               sRunMode        <= '1';
               sCommandHold    <= '1';
-              sCalibrationRun <= '1';
+              sCalibrationRun <= '0';
               sDrainIdleSeen  <= '0';
+            end if;
 
-              if sCalibDone = '1' or sCalDoneLatched = '1' then
-                sCalDoneLatched <= '0';
-                sRunState       <= RUN_STOP_DRAIN;
-              elsif sCalOperationDump = '0' and
-                    sCalibTrigReady = '1' then
-                sCalAbort       <= '1';
-                sCalDoneLatched <= '0';
-                sRunState       <= RUN_STOP_DRAIN;
-              end if;
+          -- STOP durante calibrazione/dump: attende DONE oppure un intervallo
+          -- tra due trigger in cui l'abort non lascia dati parziali
+          when RUN_STOP_CAL =>
+            sRunMode        <= '1';
+            sCommandHold    <= '1';
+            sCalibrationRun <= '1';
+            sDrainIdleSeen  <= '0';
 
-            when RUN_STOP_DRAIN =>
-              sRunMode     <= '1';
-              sCommandHold <= '1';
+            if sCalibDone = '1' or sCalDoneLatched = '1' then
+              sCalDoneLatched <= '0';
+              sRunState       <= RUN_STOP_DRAIN;
+            elsif sCalOperationDump = '0' and sCalibTrigReady = '1' then
+              sCalAbort       <= '1';
+              sCalDoneLatched <= '0';
+              sRunState       <= RUN_STOP_DRAIN;
+            end if;
 
-              if sDetectorPipelineIdle = '1' and sTdaqDataIdle = '1' then
-                if sDrainIdleSeen = '1' then
-                  sRunMode          <= '0';
-                  sCommandHold      <= '0';
-                  sEventEnable      <= '0';
-                  sCalSave          <= '0';
-                  sCalOperationDump <= '0';
-                  sCalibrationRun   <= '0';
-                  sCalArmCounter    <= 0;
-                  sDrainIdleSeen    <= '0';
-                  sCalDoneLatched   <= '0';
-                  sRunState         <= RUN_IDLE;
-                else
-                  sDrainIdleSeen <= '1';
-                end if;
+          -- STOP finale: conserva i metadati, blocca nuovi trigger e richiede
+          -- due campioni idle consecutivi prima di tornare a RUN_IDLE
+          when RUN_STOP_DRAIN =>
+            sRunMode     <= '1';
+            sCommandHold <= '1';
+
+            if sDetectorPipelineIdle = '1' and sTdaqDataIdle = '1' then
+              if sDrainIdleSeen = '1' then
+                sRunMode          <= '0';
+                sCommandHold      <= '0';
+                sEventEnable      <= '0';
+                sCalSave          <= '0';
+                sCalOperationDump <= '0';
+                sCalibrationRun   <= '0';
+                sCalArmCounter    <= 0;
+                sDrainIdleSeen    <= '0';
+                sCalDoneLatched   <= '0';
+                sRunState         <= RUN_IDLE;
               else
-                sDrainIdleSeen <= '0';
+                sDrainIdleSeen <= '1';
               end if;
+            else
+              sDrainIdleSeen <= '0';
+            end if;
 
-            when others =>
+          -- Recupero da un eventuale valore di stato non valido
+          when others =>
+            if sRegArray(rGOTO_STATE)(cRUN_REQUEST_BIT) = '0' then
+              sRunMode       <= '1';
+              sCommandHold   <= '1';
+              sCalArmCounter <= 0;
+              sDrainIdleSeen <= '0';
+              sRunState      <= RUN_STOP_DRAIN;
+            else
               sRunMode        <= '0';
               sCommandHold    <= '0';
               sCalibrationRun <= '0';
               sDrainIdleSeen  <= '0';
               sCalDoneLatched <= '0';
               sRunState       <= RUN_IDLE;
-          end case;
-        end if;
+            end if;
+        end case;
       end if;
     end if;
   end process REGISTER_COMMAND_PROC;
