@@ -88,7 +88,7 @@ architecture std of DetectorInterface is
   ) return positive is
   begin
     if iMode = cMODE_MIXED then
-      -- Una RAW e al massimo una RAW-equivalente compressa (quindi taglio prima del doppio) tot 5164byte header compreso
+      -- Un payload Legacy e al massimo una RAW-equivalente compressa (quindi taglio prima del doppio) tot 5164 byte header compreso
       return cLW_EVENT_WORDS;
     else
       -- Il solo compresso può occupare al massimo due RAW-equivalenti tot max sempre 5164 byte
@@ -134,6 +134,8 @@ architecture std of DetectorInterface is
   signal sTrig_Type_LW         : std_logic_vector(7 downto 0);
   signal sCalib_Packet_Type    : std_logic_vector(7 downto 0);
   signal sRaw_Packet_Word_Count : natural range 0 to cLW_EVENT_WORDS-1;
+  signal sMixed_Legacy_Done    : std_logic;
+  signal sMixed_Cluster_Pending : std_logic;
   signal sLW_Calib_Trig_Ready  : std_logic;
   signal sLW_Packer_Idle       : std_logic;
   signal sLW_Calib_Valid       : std_logic;
@@ -257,7 +259,7 @@ begin
   --sCalTrigEn <= iMSD_CONFIG.cfgPlane(14); --Used only in FOOT
   sHpCfg     <= iMSD_CONFIG.cfgPlane(11 downto 0);
 
-  -- iACQ_MODE: 00 Legacy, 01 Raw, 10 Compressed, 11 Mixed.
+  -- iACQ_MODE: 00 Legacy, 01 Raw, 10 Compressed, 11 Mixed (Legacy + Compressed).
   sUse_LadderWrapper <= '0' when iDAQ_MODE = cMODE_LEGACY else '1';
   sPacket_Busy <= '1' when sLW_Output_State /= RAW_OUTPUT else '0';
 
@@ -268,7 +270,11 @@ begin
   oTRIG_TYPE     <= sTrig_Type_LW when sUse_LadderWrapper = '1' else
                     cTRIG_TYPE_LEGACY;
   -- Durante il troncamento i cluster rimanenti sono eliminati in locale, non si risponde al full
-  sClust_Full <= iFASTDATA_AFULL when sLW_Output_State = CLUSTER_OUTPUT else '0';
+  -- In Mixed il cluster puo' partire appena la Event RAM e' pronta, ma la sua
+  -- uscita resta in pausa finche' tutte le parole Legacy non sono state accodate.
+  sClust_Full <= iFASTDATA_AFULL when sLW_Output_State = CLUSTER_OUTPUT else
+                 '1' when sMixed_Cluster_Pending = '1' else
+                 '0';
   sClust_Start <= sLW_Clust_EN and sNormal_Event_Armed when sEvent_Mode = cMODE_COMPRESSED or sEvent_Mode = cMODE_MIXED else '0';
 
   -- MULTIPLEXER FAST DATA
@@ -410,6 +416,8 @@ begin
           sTrig_Type_LW          <= (others => '0');
           sCalib_Packet_Type     <= cTRIG_TYPE_PEDESTAL;
           sRaw_Packet_Word_Count <= 0;
+          sMixed_Legacy_Done     <= '0';
+          sMixed_Cluster_Pending <= '0';
         else
           sFastData_WE_LW  <= '0';
           sPacket_Valid_LW <= '0';
@@ -418,18 +426,37 @@ begin
           if sLW_Event_Accepted = '1' and sUse_LadderWrapper = '1' then
             sEvent_Mode         <= iDAQ_MODE;
             sNormal_Event_Armed <= '1';
+            sMixed_Legacy_Done     <= '0';
+            sMixed_Cluster_Pending <= '0';
           end if;
 
           case sLW_Output_State is
             when RAW_OUTPUT =>
-              if sFastData_WE_LW_RAW = '1' then
+              -- Mixed inoltra il flusso prodotto dal priorityEncoder, identico
+              -- alla modalita' Legacy. La Event RAM continua in parallelo ad
+              -- acquisire i dati elaborati necessari alla compressione.
+              if sNormal_Event_Armed = '1' and sEvent_Mode = cMODE_MIXED then
+                if sFastData_WE_PE = '1' then
+                  sFastData_Data_LW <= sFastData_Data_PE;
+                  sFastData_WE_LW   <= '1';
+
+                  if sRaw_Packet_Word_Count = cLW_EVENT_WORDS-1 then
+                    sRaw_Packet_Word_Count <= 0;
+                    sMixed_Legacy_Done     <= '1';
+                  else
+                    sRaw_Packet_Word_Count <=
+                      sRaw_Packet_Word_Count + 1;
+                  end if;
+                end if;
+
+              elsif sFastData_WE_LW_RAW = '1' then
                 if sFastData_LW_HalfFull = '0' then
                   sFastData_Data_LW_LSB <= sFastData_Data_LW_RAW;
                   sFastData_LW_HalfFull <= '1';
                 else
                   sFastData_LW_HalfFull <= '0';
 
-                  -- In Compressed la RAW alimenta soltanto Event RAM, non le FIFO. In Raw, Mixed e nelle tabelle di calibrazione viene inoltrata.
+                  -- In Compressed la RAW alimenta soltanto Event RAM, non le FIFO. In Raw e nelle tabelle di calibrazione viene inoltrata.
                   if not (sNormal_Event_Armed = '1' and sEvent_Mode = cMODE_COMPRESSED) then
                     sFastData_Data_LW <= sFastData_Data_LW_LSB & sFastData_Data_LW_RAW;
                     sFastData_WE_LW <= '1';
@@ -463,12 +490,25 @@ begin
                 end if;
               end if;
 
-              -- La RAW finale e l'abilitazione possono accadere contemporaneamente nello stesso CLK. Il dato RAW viene quindi gestito
-              -- sopra prima di passare allo stream compresso
+              -- La fine del payload iniziale e l'abilitazione possono accadere contemporaneamente nello stesso CLK.
+              -- Il dato viene quindi gestito sopra prima di passare allo stream compresso.
               if sLW_Clust_EN = '1' and sNormal_Event_Armed = '1' and (sEvent_Mode = cMODE_COMPRESSED or sEvent_Mode = cMODE_MIXED) then
-                sLW_Output_State    <= CLUSTER_OUTPUT;
                 sClust_HalfFull     <= '0';
                 sCluster_Word_Count <= 0;
+
+                if sEvent_Mode = cMODE_MIXED and sMixed_Legacy_Done = '0' then
+                  sMixed_Cluster_Pending <= '1';
+                else
+                  sLW_Output_State       <= CLUSTER_OUTPUT;
+                  sMixed_Cluster_Pending <= '0';
+                end if;
+              end if;
+
+              if sMixed_Cluster_Pending = '1' and sMixed_Legacy_Done = '1' then
+                sLW_Output_State       <= CLUSTER_OUTPUT;
+                sMixed_Cluster_Pending <= '0';
+                sClust_HalfFull        <= '0';
+                sCluster_Word_Count    <= 0;
               end if;
 
             when CLUSTER_OUTPUT =>
@@ -506,7 +546,7 @@ begin
                   sFastData_WE_LW <= '1';
                   sClust_HalfFull <= '0';
 
-                  -- La parola corrente chiude il payload sull'EOP oppure sul limite: 2 RAW complessive sia per Compressed sia per Mixed
+                  -- La parola corrente chiude il payload sull'EOP oppure sul limite: 2 RAW-equivalenti complessive sia per Compressed sia per Mixed
                   if sClust_Write_Data(cADC_DATA_WIDTH) = '1' or
                      sCluster_Word_Count = vClusterWordLimit-1 then
                     vPayloadWords := sCluster_Word_Count + 1;
