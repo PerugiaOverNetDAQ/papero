@@ -49,6 +49,12 @@ entity DetectorInterface is
     iCAL_SAVE       : in  std_logic;
     iCAL_ABORT      : in  std_logic;
     iEVT_ENABLE     : in  std_logic;
+    iINJECT_ENABLE  : in  std_logic;
+    iINJECT_DATA    : in  std_logic_vector(cREG_WIDTH-1 downto 0);
+    iINJECT_WE      : in  std_logic;
+    iINJECT_CLEAR   : in  std_logic;
+    iINJECT_END     : in  std_logic;
+    oINJECT_STATUS  : out std_logic_vector(cREG_WIDTH-1 downto 0);
     oCALIB_VALID    : out std_logic;
     oCALIB_DONE     : out std_logic;
     oCALIB_TRIG_READY : out std_logic;
@@ -66,6 +72,8 @@ architecture std of DetectorInterface is
   constant cMODE_RAW        : std_logic_vector(1 downto 0) := "01";
   constant cMODE_COMPRESSED : std_logic_vector(1 downto 0) := "10";
   constant cMODE_MIXED      : std_logic_vector(1 downto 0) := "11";
+  constant cINJECT_FIFO_DEPTH : positive := 4096;
+  constant cINJECT_ROW_WORDS  : positive := (cTOTAL_ADCS * cADC_DATA_WIDTH) / cREG_WIDTH;
 
   type tLW_Output_State is (RAW_OUTPUT, CLUSTER_OUTPUT, DISCARD_OUTPUT);
   type tCalDumpState is (CAL_DUMP_IDLE, CAL_DUMP_WAIT, CAL_DUMP_SEND);
@@ -163,6 +171,23 @@ architecture std of DetectorInterface is
   signal sLW_WORD : t_FOOT_lef_data;
   signal sLW_PUTD : std_logic;
 
+  signal sInjectFifoQ     : std_logic_vector(cREG_WIDTH-1 downto 0);
+  signal sInjectFifoEmpty : std_logic;
+  signal sInjectFifoFull  : std_logic;
+  signal sInjectFifoUsedW : std_logic_vector(ceil_log2(cINJECT_FIFO_DEPTH)-1 downto 0);
+  signal sInjectFifoRd    : std_logic;
+  signal sInjectFifoWr    : std_logic;
+  signal sInjectRow       : t_FOOT_lef_data;
+  signal sInjectOutputRow : t_FOOT_lef_data;
+  signal sInjectWordCount : natural range 0 to cINJECT_ROW_WORDS-1;
+  signal sInjectActive    : std_logic;
+  signal sInjectFailed    : std_logic;
+  signal sInjectDone      : std_logic;
+  signal sInjectReady     : std_logic;
+  signal sInjectEnableDel : std_logic;
+  signal sInjectEnd       : std_logic;
+  signal sInjectRowSeen   : std_logic;
+
   signal sPedIn_Cal     : CalibCompIN;
   signal sPedOut_Cal    : CalibCompOUT;
 
@@ -204,6 +229,120 @@ architecture std of DetectorInterface is
   signal sClust_FLG         : std_logic_vector(3 downto 0);
 
 begin
+  -- Status word dell'injection
+  oINJECT_STATUS <= std_logic_vector(resize(unsigned(sInjectFifoUsedW), 16)) & x"000" & sInjectReady & sInjectDone & sInjectFailed & sInjectActive;
+
+  -- Non scrivo nella FIFO nuove parole se la fifo è piena o inj fallita
+  sInjectFifoWr <= iINJECT_WE and not sInjectFailed and not sInjectFifoFull;
+  -- Leggo se inj active e se non è ready né empty
+  sInjectFifoRd <= sInjectActive and not sInjectReady and not sInjectFifoEmpty;
+
+  INJECT_FIFO : parametric_fifo_synch
+    generic map (
+      pWIDTH       => cREG_WIDTH,
+      pDEPTH       => cINJECT_FIFO_DEPTH,
+      pUSEDW_WIDTH => ceil_log2(cINJECT_FIFO_DEPTH),
+      pAEMPTY_VAL  => 1,
+      pAFULL_VAL   => cINJECT_FIFO_DEPTH-256,
+      pSHOW_AHEAD  => "ON"
+      )
+    port map (
+      iCLK    => iCLK,
+      iRST    => iRST or iINJECT_CLEAR,
+      oAEMPTY => open,
+      oEMPTY  => sInjectFifoEmpty,
+      oAFULL  => open,
+      oFULL   => sInjectFifoFull,
+      oUSEDW  => sInjectFifoUsedW,
+      iRD_REQ => sInjectFifoRd,
+      iWR_REQ => sInjectFifoWr,
+      iDATA   => iINJECT_DATA,
+      oQ      => sInjectFifoQ
+      );
+
+  INJECT_CONTROL : process(iCLK)
+    variable vAnyRead : std_logic;
+  begin
+    if rising_edge(iCLK) then
+      if iRST = '1' or iINJECT_CLEAR = '1' then
+        sInjectRow       <= (others => (others => '0'));
+        sInjectOutputRow <= (others => (others => '0'));
+        sInjectWordCount <= 0;
+        sInjectActive    <= '0';
+        sInjectFailed    <= '0';
+        sInjectDone      <= '0';
+        sInjectReady     <= '0';
+        sInjectEnableDel <= '0';
+        sInjectEnd       <= '0';
+        sInjectRowSeen   <= '0';
+      else
+        sInjectEnableDel <= iINJECT_ENABLE;
+
+        if iINJECT_END = '1' then
+          sInjectEnd <= '1';
+        end if;
+
+        -- Rising edge
+        if iINJECT_ENABLE = '1' and sInjectEnableDel = '0' then
+          sInjectActive <= '1';
+          sInjectDone   <= '0';
+        end if;
+
+        -- Se leggo dalla FIFO (CON SHOW_AHEAD) carico i dati nei posti giusti del segnale
+        if sInjectFifoRd = '1' then
+          sInjectRow(2*sInjectWordCount)     <= sInjectFifoQ(31 downto 16);
+          sInjectRow(2*sInjectWordCount + 1) <= sInjectFifoQ(15 downto 0);
+
+          if sInjectWordCount = cINJECT_ROW_WORDS-1 then
+            sInjectWordCount <= 0;
+            sInjectReady     <= '1';
+            sInjectRowSeen   <= '1';
+          else
+            sInjectWordCount <= sInjectWordCount + 1;
+          end if;
+        end if;
+
+        --- Se il sistema legge dalla FIFO FE
+        vAnyRead := '0';
+        for i in 0 to cTOTAL_ADCS-1 loop
+          vAnyRead := vAnyRead or sMultiFifoIn(i).rd;
+        end loop;
+
+        -- Leggo da FE (putD) e INJ è attiva
+        if vAnyRead = '1' and sInjectActive = '1' then
+          -- Se ho costruito il dato e quindi sono pronto per caricarlo in LW
+          if sInjectReady = '1' then
+            sInjectOutputRow <= sInjectRow;
+            sInjectReady     <= '0';
+          -- Altrimenti FAIL e termina
+          else
+            sInjectActive <= '0';
+            sInjectFailed <= '1';
+            sInjectDone   <= '1';
+          end if;
+        end if;
+
+        -- Se provo a inserire una nuova parola dal DAT nella FIFO Full, allora FAIL e termina 
+        if iINJECT_WE = '1' and sInjectFifoFull = '1' then
+          sInjectActive <= '0';
+          sInjectFailed <= '1';
+          sInjectDone   <= '1';
+        end if;
+
+        if sInjectActive = '1' and sInjectEnd = '1' and sInjectFifoEmpty = '1' and sInjectReady = '0' and sInjectRowSeen = '0' then
+          sInjectActive <= '0';
+          sInjectFailed <= '1';
+          sInjectDone   <= '1';
+        end if;
+
+        -- Se la calibrazione termina o viene lanciato ABORT, allora dai il done.
+        if sLW_Calib_Done = '1' or iCAL_ABORT = '1' then
+          sInjectActive <= '0';
+          sInjectDone   <= '1';
+        end if;
+      end if;
+    end if;
+  end process INJECT_CONTROL;
 
   oCALIB_VALID <= sLW_Calib_Valid;
   oCALIB_DONE  <= sLW_Calib_Done or sCalDumpDone;
@@ -371,7 +510,7 @@ begin
 
 
     GEN_LW_WORD : for i in 0 to cTOTAL_ADCS-1 generate
-      sLW_WORD(i) <= sMultiFifoOut(i).q;
+      sLW_WORD(i) <= sInjectOutputRow(i) when sInjectActive = '1' else sMultiFifoOut(i).q;
     end generate;
     -- PUTD per LadderWrapper:
     GEN_LW_PUTD : process(iCLK)

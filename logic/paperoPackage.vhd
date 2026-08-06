@@ -62,6 +62,8 @@ package paperoPackage is
   constant rBUSYADC_PARAM  : natural := 8;
   constant rHV_PARAM       : natural := 9;
   constant rTHR_PARAM      : natural := 11; -- Registro dedicato alle threshold. Qui carico HTH|LTH
+  constant rINJECT_DATA    : natural := 12; -- Registro di dati
+  constant rINJECT_CTRL    : natural := 13; -- Registro di controllo
 
   -- Register 0 command bits
   constant cRUN_REQUEST_BIT   : natural := 4;   -- Avvia e mantiene il comando quando 1, 0 fa stop.
@@ -70,6 +72,7 @@ package paperoPackage is
   constant cTHR_VALID_BIT     : natural := 18;  -- Carica le THR da REG11 e genera impulto valid per applicarle
   constant cAUTO_CALIB_BIT    : natural := 19;  -- Calcola una nuova calib solamente se non esiste una valida
   constant cSAVE_CALIB_BIT    : natural := 20;  -- Invia le quattro tabelle di calibrazione
+  constant cINJECT_BIT        : natural := 21;  -- Usa i dati precaricati dall'HPS durante la prossima calibrazione
   constant cDAQ_MODE_LSB      : natural := 24;  -- LSB DAQ MODE
   constant cDAQ_MODE_MSB      : natural := 25;  -- MSB DAQ MODE
 
@@ -95,6 +98,7 @@ package paperoPackage is
   constant rFDI_FIFO_NUMWORD : natural := 9;
   constant rHV_CURR_MON      : natural := 10;
   constant rCALIB_STATUS     : natural := 11;
+  constant rINJECT_STATUS    : natural := 12;
   constant rPIUMONE          : natural := 15;
 
   --!Fast-data packet format
@@ -452,6 +456,11 @@ package paperoPackage is
       iPACKET_VALID       : in  std_logic;
       iPAYLOAD_WORDS      : in  std_logic_vector(cREG_WIDTH-1 downto 0);
       iTRIG_TYPE          : in  std_logic_vector(7 downto 0);
+      oINJECT_DATA        : out std_logic_vector(cREG_WIDTH-1 downto 0);
+      oINJECT_WE          : out std_logic;
+      oINJECT_CLEAR       : out std_logic;
+      oINJECT_END         : out std_logic;
+      iINJECT_STATUS      : in  std_logic_vector(cREG_WIDTH-1 downto 0);
       --# {{H2F_FIFO|H2F_FIFO}}
       iFIFO_H2F_EMPTY     : in  std_logic;
       iFIFO_H2F_DATA      : in  std_logic_vector(31 downto 0);
@@ -542,6 +551,12 @@ package paperoPackage is
       iCAL_SAVE       : in  std_logic;
       iCAL_ABORT      : in  std_logic;
       iEVT_ENABLE     : in  std_logic;
+      iINJECT_ENABLE  : in  std_logic;
+      iINJECT_DATA    : in  std_logic_vector(cREG_WIDTH-1 downto 0);
+      iINJECT_WE      : in  std_logic;
+      iINJECT_CLEAR   : in  std_logic;
+      iINJECT_END     : in  std_logic;
+      oINJECT_STATUS  : out std_logic_vector(cREG_WIDTH-1 downto 0);
       oCALIB_VALID    : out std_logic;
       oCALIB_DONE     : out std_logic;
       oCALIB_TRIG_READY : out std_logic;

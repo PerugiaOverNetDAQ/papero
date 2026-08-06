@@ -45,6 +45,11 @@ entity TdaqModule is
     iPACKET_VALID       : in  std_logic;
     iPAYLOAD_WORDS      : in  std_logic_vector(cREG_WIDTH-1 downto 0);
     iTRIG_TYPE          : in  std_logic_vector(7 downto 0);
+    oINJECT_DATA        : out std_logic_vector(cREG_WIDTH-1 downto 0);
+    oINJECT_WE          : out std_logic;
+    oINJECT_CLEAR       : out std_logic;
+    oINJECT_END         : out std_logic;
+    iINJECT_STATUS      : in  std_logic_vector(cREG_WIDTH-1 downto 0);
     --H2F
     iFIFO_H2F_EMPTY     : in  std_logic;  --!FIFO H2F Wait Request
     iFIFO_H2F_DATA      : in  std_logic_vector(31 downto 0);  --!FIFO H2F q
@@ -127,6 +132,14 @@ architecture std of TdaqModule is
 
 
 begin
+  oINJECT_DATA  <= sRegConfigRx.reg;
+  -- Scrivo solamente se addr di config receiver corrisponde a INJ DATA
+  oINJECT_WE    <= sRegConfigRx.we when slv2int(sRegConfigRx.addr) = rINJECT_DATA else '0';
+  -- Se bit0 del registro è 1 e WE e sono in INJ CONTROL, allora CLEAR di INJ
+  oINJECT_CLEAR <= sRegConfigRx.we and sRegConfigRx.reg(0) when slv2int(sRegConfigRx.addr) = rINJECT_CTRL else '0';
+  -- Se bit1 del registro è 1 e WE è altro e sono in INJ CNTRL allora END INJ
+  oINJECT_END   <= sRegConfigRx.we and sRegConfigRx.reg(1) when slv2int(sRegConfigRx.addr) = rINJECT_CTRL else '0';
+
   -- Register Array assignments
   sTrigEn                 <= iTRIG_ENABLE;
   --
@@ -391,8 +404,8 @@ begin
   sFpgaRegIntf.we(rHV_CURR_MON)      <= '1';
   sFpgaRegIntf.regs(rCALIB_STATUS)   <= (0 => iCALIB_VALID, 1 => iRUN_IDLE, others => '0');
   sFpgaRegIntf.we(rCALIB_STATUS)     <= '1';
-  sFpgaRegIntf.regs(12)              <= (others => '0');
-  sFpgaRegIntf.we(12)                <= '0';
+  sFpgaRegIntf.regs(rINJECT_STATUS)  <= iINJECT_STATUS;
+  sFpgaRegIntf.we(rINJECT_STATUS)    <= '1';
   sFpgaRegIntf.regs(13)              <= (others => '0');
   sFpgaRegIntf.we(13)                <= '0';
   sFpgaRegIntf.regs(14)              <= (others => '0');

@@ -261,6 +261,12 @@ architecture std of top_papero is
   signal sPacketValid   : std_logic;
   signal sPayloadWords  : std_logic_vector(cREG_WIDTH-1 downto 0);
   signal sPacketTrigType : std_logic_vector(7 downto 0);
+  signal sInjectData    : std_logic_vector(cREG_WIDTH-1 downto 0);
+  signal sInjectStatus  : std_logic_vector(cREG_WIDTH-1 downto 0);
+  signal sInjectWe      : std_logic;
+  signal sInjectClear   : std_logic;
+  signal sInjectEnd     : std_logic;
+  signal sInjectRequested : std_logic;
   signal sFeA           : tFpga2FeIntf;
   signal sFeB           : tFpga2FeIntf;
   signal sAdcA          : tFpga2AdcIntf;
@@ -644,6 +650,11 @@ begin
       iPACKET_VALID       => sPacketValid,
       iPAYLOAD_WORDS      => sPayloadWords,
       iTRIG_TYPE          => sPacketTrigType,
+      oINJECT_DATA        => sInjectData,
+      oINJECT_WE          => sInjectWe,
+      oINJECT_CLEAR       => sInjectClear,
+      oINJECT_END         => sInjectEnd,
+      iINJECT_STATUS      => sInjectStatus,
       --
       iFIFO_H2F_EMPTY     => fifo_h2f_empty,
       iFIFO_H2F_DATA      => fifo_h2f_data_out,
@@ -738,6 +749,7 @@ begin
         sCalArmCounter    <= 0;
         sDrainIdleSeen    <= '0';
         sCalDoneLatched   <= '0';
+        sInjectRequested  <= '0';
         sRunState         <= RUN_IDLE;
 
       elsif sRegArrayRst = '1' then
@@ -758,6 +770,7 @@ begin
         sCalArmCounter    <= 0;
         sDrainIdleSeen    <= '0';
         sCalDoneLatched   <= '0';
+        sInjectRequested  <= '0';
         sRunState         <= RUN_IDLE;
 
       else
@@ -769,6 +782,10 @@ begin
         -- Memorizza CalibDone fino a quando non viene utilizzata da FSM
         if sCalibDone = '1' then
           sCalDoneLatched <= '1';
+        end if;
+
+        if sInjectStatus(2) = '1' or sInjectStatus(1) = '1' then
+          sInjectRequested <= '0';
         end if;
 
         -- Con THR_Valid applico le soglie una sola volta
@@ -797,6 +814,7 @@ begin
               sCalArmCounter    <= 0;
               sDrainIdleSeen    <= '0';
               sCalDoneLatched   <= '0';
+              sInjectRequested  <= '0';
 
             elsif sStartPrev = '0' then
               -- risingEdge START: campiona tutti i campi del comando
@@ -808,6 +826,7 @@ begin
               sCalArmCounter    <= 0;
               sDrainIdleSeen    <= '0';
               sCalDoneLatched   <= '0';
+              sInjectRequested  <= '0';
 
               -- Le soglie sono acquisite insieme al comando e applicate al clock successivo
               if sRegArray(rGOTO_STATE)(cTHR_VALID_BIT) = '1' then
@@ -826,6 +845,7 @@ begin
                 sCalEnable        <= '1';
                 sCalOperationDump <= '0';
                 sCalibrationRun   <= '1';
+                sInjectRequested  <= sRegArray(rGOTO_STATE)(cINJECT_BIT);
                 sRunState         <= RUN_CAL_ARM;
 
               elsif sCalibValid = '1' and sRegArray(rGOTO_STATE)(cSAVE_CALIB_BIT) = '1' then
@@ -938,7 +958,8 @@ begin
               else
                 sCalEnable <= '1';
 
-                if sCalibTrigReady = '1' then
+                if sCalibTrigReady = '1' and
+                   (sInjectRequested = '0' or sInjectStatus(3) = '1') then
                   sCalEnable     <= '0';
                   sCommandHold   <= '0';
                   sCalArmCounter <= 0;
@@ -1062,6 +1083,7 @@ begin
                 sCalArmCounter    <= 0;
                 sDrainIdleSeen    <= '0';
                 sCalDoneLatched   <= '0';
+                sInjectRequested  <= '0';
                 sRunState         <= RUN_IDLE;
               else
                 sDrainIdleSeen <= '1';
@@ -1121,6 +1143,12 @@ begin
       iCAL_SAVE       => sCalSave,
       iCAL_ABORT      => sCalAbort,
       iEVT_ENABLE     => sEventEnable,
+      iINJECT_ENABLE  => sInjectRequested,
+      iINJECT_DATA    => sInjectData,
+      iINJECT_WE      => sInjectWe,
+      iINJECT_CLEAR   => sInjectClear,
+      iINJECT_END     => sInjectEnd,
+      oINJECT_STATUS  => sInjectStatus,
       oCALIB_VALID    => sCalibValid,
       oCALIB_DONE     => sCalibDone,
       oCALIB_TRIG_READY => sCalibTrigReady,
