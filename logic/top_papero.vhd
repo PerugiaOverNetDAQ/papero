@@ -538,7 +538,7 @@ begin
       );
 
   sExtTsEn  <= sBcoClkSynch;
-  sExtTsRst <= sBcoRstSynch or sCountersRst
+  sExtTsRst <= sCountersRst --sBcoRstSynch or
                or sDetIntfRst or not sRunMode;
   --!@brief External timestamp counter
   extTimestampCounter : counter
